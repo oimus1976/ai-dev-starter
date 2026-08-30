@@ -21,12 +21,33 @@ Primary recent evidence sources:
 - durable ADRs, current status, semantic changelog, and PR history have different jobs;
 - human comprehension must not lag indefinitely behind AI implementation throughput.
 
+## First template-generation smoke
+
+On 2026-08-30, `oimus1976/ai-dev-starter-adoption-smoke` was created from this repository using GitHub's template mechanism.
+
+Observed evidence:
+
+- the generated repository records `oimus1976/ai-dev-starter` as its template source;
+- the generated initial commit tree and the template main tree were identical: `f10a0a8e1b05c9f59dc02dc5b29d8a328dfad8b7`;
+- only `.github/workflows/policy-check.yml` was copied; no project CI workflow was present;
+- the initial generated-repo policy check failed closed on unresolved project/profile/status values and missing project CI;
+- canonical starter regression tests were skipped in the generated repository as intended;
+- the real Actions log exposed that `actions/checkout` defaulted to `persist-credentials: true`, prompting an explicit `false` hardening change;
+- the initial failure was accurate but cognitively noisy, prompting a concise initialization/next-step summary ahead of detailed diagnostics.
+
+GitHub enforcement observation on the starter repository:
+
+- `main` reported `protected: false`;
+- the repository rulesets API returned `403` indicating GitHub Pro or a public repository is required for that feature under the current repository/account state.
+
+Therefore the house rule against normal direct `main` writes is currently **DECLARED policy**, not GitHub platform enforcement. Do not describe it as `ENFORCED` or `VERIFIED` unless the platform state changes and is re-observed.
+
 ## Known limits of the baseline
 
 1. The evidence comes from a small number of projects by the same owner in the same time period.
 2. These projects are unusually security/evidence conscious; copying their strongest controls into every small project would create ceremony without proportional benefit.
-3. GitHub ruleset/branch-protection enforcement was not independently observable through the available integration during baseline review. The starter therefore records enforcement state separately from declared policy.
-4. v0.5 has not yet been used to bootstrap a fresh real project. Adoption friction and missing defaults remain empirical questions.
+3. GitHub branch protection/ruleset enforcement is not active for the starter under the observed current repository/account state; human/process discipline still carries the direct-main-write boundary.
+4. Template generation has now been smoke-tested, but v0.5 has not yet been used to start and evolve a fresh real project through its first meaningful tracked change. Adoption friction and missing defaults remain empirical questions.
 5. A clean AI review does not prove the baseline itself is optimal; new evidence should trigger revision.
 
 ## Promotion criterion

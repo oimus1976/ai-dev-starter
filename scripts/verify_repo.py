@@ -190,12 +190,13 @@ if profile:
                 )
 
 status_path = ROOT / "PROJECT_STATUS.md"
+status_text = ""
 if status_path.is_file():
-    text = status_path.read_text(encoding="utf-8")
+    status_text = status_path.read_text(encoding="utf-8")
     for marker in ["## 30-second state", "## Recovery / first diagnostic entry points"]:
-        if marker not in text:
+        if marker not in status_text:
             errors.append(f"PROJECT_STATUS.md missing section: {marker}")
-    if not is_template_repository and "TODO" in text:
+    if not is_template_repository and "TODO" in status_text:
         errors.append(
             "PROJECT_STATUS.md still contains TODO; replace each with a concrete value or explicit 'none/N/A'"
         )
@@ -214,6 +215,43 @@ else:
 
 if errors:
     print("BASELINE CHECK: FAIL")
+    profile_or_status_pending = any(
+        marker in error
+        for error in errors
+        for marker in ("starter placeholder", "PROJECT_STATUS.md still contains TODO")
+    )
+    project_ci_missing = any(
+        "project-specific CI workflow is missing" in error for error in errors
+    )
+    bootstrap_available = (
+        not is_template_repository
+        and profile.get("project", {}).get("name") == "TODO"
+        and profile.get("project", {}).get("purpose") == "TODO"
+        and "- **Goal:** TODO" in status_text
+    )
+    if not is_template_repository and (profile_or_status_pending or project_ci_missing):
+        print("PROJECT SETUP INCOMPLETE: tracked implementation should not be accepted yet.")
+        print("NEXT STEPS:")
+        step = 1
+        if bootstrap_available:
+            print(
+                f'{step}. Fresh-copy shortcut: python scripts/bootstrap.py --name "..." --purpose "..."'
+            )
+            step += 1
+        if profile_or_status_pending:
+            print(
+                f"{step}. Complete only the remaining TODO/TODO_OR_NA values in PROJECT_PROFILE.toml and PROJECT_STATUS.md."
+            )
+            step += 1
+        if project_ci_missing:
+            print(
+                f"{step}. Add .github/workflows/project-ci.yml with real checks for this project."
+            )
+            step += 1
+        print(
+            f'{step}. Re-run: python scripts/verify_repo.py --repository "owner/repo"'
+        )
+        print("DETAILS:")
     for err in errors:
         print(f"- {err}")
     sys.exit(1)
