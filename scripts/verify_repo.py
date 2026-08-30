@@ -214,6 +214,21 @@ else:
 
 if errors:
     print("BASELINE CHECK: FAIL")
+    adoption_markers = (
+        "starter placeholder",
+        "PROJECT_STATUS.md still contains TODO",
+        "project-specific CI workflow is missing",
+    )
+    if not is_template_repository and any(
+        marker in error for error in errors for marker in adoption_markers
+    ):
+        print("INITIALIZATION REQUIRED: this generated repository still has starter defaults.")
+        print("NEXT STEPS:")
+        print('1. Run: python scripts/bootstrap.py --name "..." --purpose "..."')
+        print("2. Complete remaining TODO/TODO_OR_NA values in PROJECT_PROFILE.toml and PROJECT_STATUS.md.")
+        print("3. Add .github/workflows/project-ci.yml with real checks for this project.")
+        print('4. Re-run: python scripts/verify_repo.py --repository "owner/repo"')
+        print("DETAILS:")
     for err in errors:
         print(f"- {err}")
     sys.exit(1)
