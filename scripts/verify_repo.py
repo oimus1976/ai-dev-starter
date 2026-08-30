@@ -13,6 +13,7 @@ import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_REPOSITORY = "oimus1976/ai-dev-starter"
+PROJECT_CI = Path(".github/workflows/project-ci.yml")
 
 REQUIRED = [
     ".gitignore",
@@ -26,29 +27,28 @@ REQUIRED = [
     "docs/adr/README.md",
     ".github/pull_request_template.md",
     ".github/workflows/policy-check.yml",
-    ".github/workflows/ci.yml",
     "scripts/bootstrap.py",
     "tests/test_verify_repo.py",
 ]
 
-TIER_ORDER = {"R0": 0, "R1": 1, "R2": 2, "R3": 3}
+RISK_ORDER = {"ROUTINE": 1, "BOUNDARY": 2, "HIGH_IMPACT": 3}
 COMP_ORDER = {"C0": 0, "C1": 1, "C2": 2}
-FACET_MIN_TIER = {
-    "PRIVATE_DATA": "R2",
-    "EXTERNAL_WRITE": "R2",
-    "AI_AGENT": "R2",  # Runtime agent authority/mutation, not AI-assisted coding.
-    "PLATFORM_DEPENDENT": "R2",
-    "WORKFLOW_PERMISSION": "R2",
-    "DESTRUCTIVE_IO": "R3",
-    "CREDENTIALS": "R3",
-    "DEPLOYMENT": "R3",
-    "SECURITY_BOUNDARY": "R3",
-    "HIGH_AUTHORITY": "R3",
-    "CRYPTOGRAPHY": "R3",
+FACET_MIN_LEVEL = {
+    "PRIVATE_DATA": "BOUNDARY",
+    "EXTERNAL_WRITE": "BOUNDARY",
+    "AI_AGENT": "BOUNDARY",  # Runtime agent authority/mutation, not AI-assisted coding.
+    "PLATFORM_DEPENDENT": "BOUNDARY",
+    "WORKFLOW_PERMISSION": "BOUNDARY",
+    "DESTRUCTIVE_IO": "HIGH_IMPACT",
+    "CREDENTIALS": "HIGH_IMPACT",
+    "DEPLOYMENT": "HIGH_IMPACT",
+    "SECURITY_BOUNDARY": "HIGH_IMPACT",
+    "HIGH_AUTHORITY": "HIGH_IMPACT",
+    "CRYPTOGRAPHY": "HIGH_IMPACT",
 }
-TIER_MIN_COMP = {"R0": "C0", "R1": "C1", "R2": "C1", "R3": "C2"}
+LEVEL_MIN_COMP = {"ROUTINE": "C1", "BOUNDARY": "C1", "HIGH_IMPACT": "C2"}
 ALLOWED_LIFECYCLES = {"experimental", "active", "production"}
-ALLOWED_PROJECT_DEFAULT_TIERS = {"R1", "R2", "R3"}
+ALLOWED_PROJECT_DEFAULT_LEVELS = set(RISK_ORDER)
 ALLOWED_ENFORCEMENT_STATES = {"DECLARED", "ENFORCED", "VERIFIED", "UNKNOWN"}
 
 parser = argparse.ArgumentParser()
@@ -95,40 +95,40 @@ if profile:
         errors.append(f"invalid project.lifecycle: {lifecycle!r}")
 
     facets = need(profile, ("risk", "persistent_facets"))
-    tier = need(profile, ("risk", "default_tier"))
+    level = need(profile, ("risk", "default_level"))
     comp = need(profile, ("comprehension", "required_level"))
 
     if not isinstance(facets, list) or not all(isinstance(x, str) for x in facets):
         errors.append("risk.persistent_facets must be an array of strings")
         facets = []
     else:
-        unknown = sorted(set(facets) - set(FACET_MIN_TIER))
+        unknown = sorted(set(facets) - set(FACET_MIN_LEVEL))
         if unknown:
             errors.append(f"unknown risk facets: {', '.join(unknown)}")
 
-    if tier not in ALLOWED_PROJECT_DEFAULT_TIERS:
+    if level not in ALLOWED_PROJECT_DEFAULT_LEVELS:
         errors.append(
-            f"invalid risk.default_tier: {tier!r}; persistent project defaults must be R1, R2, or R3"
+            f"invalid risk.default_level: {level!r}; use ROUTINE, BOUNDARY, or HIGH_IMPACT"
         )
     if comp not in COMP_ORDER:
         errors.append(f"invalid comprehension.required_level: {comp!r}")
 
-    if tier in TIER_ORDER:
-        required_tier = "R0"
+    if level in RISK_ORDER:
+        required_level = "ROUTINE"
         for facet in facets:
-            min_tier = FACET_MIN_TIER.get(facet)
-            if min_tier and TIER_ORDER[min_tier] > TIER_ORDER[required_tier]:
-                required_tier = min_tier
-        if TIER_ORDER[tier] < TIER_ORDER[required_tier]:
+            minimum = FACET_MIN_LEVEL.get(facet)
+            if minimum and RISK_ORDER[minimum] > RISK_ORDER[required_level]:
+                required_level = minimum
+        if RISK_ORDER[level] < RISK_ORDER[required_level]:
             errors.append(
-                f"risk downgrade: facets require at least {required_tier}, but default_tier is {tier}"
+                f"risk downgrade: facets require at least {required_level}, but default_level is {level}"
             )
 
         if comp in COMP_ORDER:
-            required_comp = TIER_MIN_COMP[tier]
+            required_comp = LEVEL_MIN_COMP[level]
             if COMP_ORDER[comp] < COMP_ORDER[required_comp]:
                 errors.append(
-                    f"comprehension downgrade: {tier} requires at least {required_comp}, but required_level is {comp}"
+                    f"comprehension downgrade: {level} requires at least {required_comp}, but required_level is {comp}"
                 )
 
     if need(profile, ("governance", "ready")) != "human_final":
@@ -142,9 +142,9 @@ if profile:
         )
     if need(profile, ("enforcement", "required_ci", "desired")) is not True:
         errors.append("house policy violation: enforcement.required_ci.desired must be true")
-    if need(profile, ("verification", "exact_head_required_from_tier")) != "R3":
+    if need(profile, ("verification", "exact_head_required_from_level")) != "HIGH_IMPACT":
         errors.append(
-            "house policy violation: verification.exact_head_required_from_tier must be R3"
+            "house policy violation: verification.exact_head_required_from_level must be HIGH_IMPACT"
         )
 
     for branch in ("main_direct_write", "required_ci"):
@@ -200,12 +200,11 @@ if status_path.is_file():
             "PROJECT_STATUS.md still contains TODO; replace each with a concrete value or explicit 'none/N/A'"
         )
 
-ci_path = ROOT / ".github/workflows/ci.yml"
-if ci_path.is_file() and not is_template_repository:
-    if "project-ci-not-configured" in ci_path.read_text(encoding="utf-8"):
+if not is_template_repository:
+    project_ci_path = ROOT / PROJECT_CI
+    if not project_ci_path.is_file() or project_ci_path.stat().st_size == 0:
         errors.append(
-            "project CI is still the intentionally failing starter placeholder; "
-            "replace .github/workflows/ci.yml before accepting tracked implementation"
+            "project-specific CI workflow is missing; add .github/workflows/project-ci.yml before accepting tracked implementation"
         )
 
 if errors:
