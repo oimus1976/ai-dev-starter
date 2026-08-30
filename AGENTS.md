@@ -6,7 +6,7 @@ This repository uses the oimus AI Development Baseline.
 
 1. Read `PROJECT_STATUS.md`, `PROJECT_PROFILE.toml`, and relevant ADR/design docs.
 2. Identify the intended work item/PR and target branch.
-3. State the change-specific risk facets and derived risk level: `ROUTINE`, `BOUNDARY`, or `HIGH_IMPACT`.
+3. State the change-specific risk facets and derived risk level: `ROUTINE`, `ELEVATED`, or `HIGH_IMPACT`.
 4. Escalate automatically when the change touches credentials, deployment, destructive I/O, security/authority logic, private data, external writes, workflow permissions, or real platform behavior.
 5. If you cannot establish the target repository/branch/work item, stop before writing.
 
