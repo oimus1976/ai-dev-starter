@@ -24,6 +24,8 @@ jobs:
           python-version: '3.12'
       - name: Compile starter scripts
         run: python -m py_compile scripts/bootstrap.py scripts/verify_repo.py
+      - name: Run starter regression tests
+        run: python -m unittest discover -s tests -v
       - name: Verify template repository
         run: python scripts/verify_repo.py --repository "${{ github.repository }}"
 
