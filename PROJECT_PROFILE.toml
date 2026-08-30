@@ -28,7 +28,7 @@ persistent_facets = []
 # CREDENTIALS, DEPLOYMENT, CRYPTOGRAPHY, WORKFLOW_PERMISSION
 # AI_AGENT means runtime agent authority/mutation, not merely AI-assisted development.
 # Risk levels are named rather than numbered to reduce comprehension debt.
-default_level = "ROUTINE" # ROUTINE | BOUNDARY | HIGH_IMPACT
+default_level = "ROUTINE" # ROUTINE | ELEVATED | HIGH_IMPACT
 
 [comprehension]
 required_level = "C1" # C0 Operate | C1 Diagnose | C2 Govern
