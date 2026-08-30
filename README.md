@@ -11,7 +11,7 @@ AI output is a claim until verified by an authoritative source.
 The starter therefore separates:
 
 - **authority** — which system owns which fact;
-- **risk** — which facets and tier apply to the change;
+- **risk** — which facets and named level apply to the change;
 - **evidence** — what actually proves the change;
 - **human comprehension** — whether the owner can still operate, diagnose, and govern the project;
 - **protected effects** — which actions require separate human decisions.
@@ -23,8 +23,18 @@ The starter therefore separates:
 3. Complete `PROJECT_PROFILE.toml`.
 4. Complete the summary block at the top of `PROJECT_STATUS.md`.
 5. Read `BASELINE.md` and keep only the risk facets that actually apply.
-6. Replace the copied placeholder CI in `.github/workflows/ci.yml` with project-specific checks. The canonical `oimus1976/ai-dev-starter` repository self-checks itself; copies intentionally fail until this step is done.
+6. Add a project-specific `.github/workflows/project-ci.yml`. The starter does **not** copy an active dummy project CI workflow. Until your project CI exists, `policy-check` fails closed instead of presenting an unexplained green state.
 7. Run `python scripts/verify_repo.py`.
+
+## Risk language
+
+Risk levels use names rather than `R1/R2/R3` codes:
+
+- `ROUTINE` — ordinary bounded tracked change;
+- `BOUNDARY` — external/platform/privacy/agent/workflow boundary is involved;
+- `HIGH_IMPACT` — failure could authorize, expose, destroy, deploy, sign, or weaken a security boundary.
+
+Review findings also use words rather than reverse-numbered `P0/P1/...` labels: `CRITICAL`, `MAJOR`, `MINOR`, `NOTE`.
 
 ## Default workflow
 
@@ -56,8 +66,8 @@ Exploration that is genuinely disposable does not need Issue/PR ceremony. Once w
 - `AGENTS.md` — instructions for AI coding agents.
 - `docs/adr/` — durable architecture decisions when warranted.
 - `.github/pull_request_template.md` — review/evidence/comprehension checklist.
-- `.github/workflows/policy-check.yml` — starter structural policy check.
-- `.github/workflows/ci.yml` — intentionally failing placeholder until project CI is defined.
+- `.github/workflows/policy-check.yml` — starter structural check and baseline self-test.
+- `.github/workflows/project-ci.yml` — intentionally **absent** from the template; each generated project must add its own real CI.
 - `scripts/bootstrap.py` — dependency-free identity initializer.
 - `scripts/verify_repo.py` — dependency-free starter consistency check.
 
