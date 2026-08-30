@@ -1,0 +1,55 @@
+[baseline]
+name = "oimus-ai-development-baseline"
+version = "0.5"
+reviewed_at = "2026-08-30"
+
+[project]
+name = "TODO"
+purpose = "TODO"
+lifecycle = "experimental" # experimental | active | production
+
+# One authority per material fact/state where practical.
+[authority]
+planning = "TODO"
+execution = "TODO"
+source_code = "git"
+private_actual_data = "TODO_OR_NA"
+ci_result = "TODO"
+review_result = "TODO"
+production_state = "TODO_OR_NA"
+credentials = "TODO_OR_NA"
+release_artifacts = "TODO_OR_NA"
+
+[risk]
+persistent_facets = []
+# Allowed values:
+# PRIVATE_DATA, EXTERNAL_WRITE, DESTRUCTIVE_IO, AI_AGENT,
+# SECURITY_BOUNDARY, HIGH_AUTHORITY, PLATFORM_DEPENDENT,
+# CREDENTIALS, DEPLOYMENT, CRYPTOGRAPHY, WORKFLOW_PERMISSION
+# AI_AGENT means runtime agent authority/mutation, not merely AI-assisted development.
+default_tier = "R1"
+
+[comprehension]
+required_level = "C1" # C0 Operate | C1 Diagnose | C2 Govern
+owner_checkpoint = "TODO"
+
+[governance]
+ready = "human_final"
+merge = "human_final"
+deploy = "project_specific"
+release = "project_specific"
+
+[enforcement.main_direct_write]
+desired = "forbidden_normal_path"
+state = "UNKNOWN" # DECLARED | ENFORCED | VERIFIED | UNKNOWN
+evidence = "TODO"
+
+[enforcement.required_ci]
+desired = true
+state = "UNKNOWN"
+evidence = "TODO"
+
+[verification]
+real_boundary_smoke_required = false
+test_matrix_required = false
+exact_head_required_from_tier = "R3"
