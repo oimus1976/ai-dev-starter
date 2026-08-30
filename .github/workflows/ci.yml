@@ -15,10 +15,10 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        # Pinned commit adopted from current reviewed CI; update deliberately.
+        # actions/checkout v4 line, pinned to reviewed commit; update deliberately.
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Set up Python
-        # Pinned commit adopted from current reviewed CI; update deliberately.
+        # actions/setup-python v5 line, pinned to reviewed commit; update deliberately.
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.12'
