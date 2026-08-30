@@ -42,6 +42,14 @@ class VerifyRepoTests(StarterTestCase):
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn("BASELINE CHECK: PASS", result.stdout)
 
+    def test_canonical_template_rejects_active_project_ci(self) -> None:
+        repo = self.make_copy()
+        path = repo / ".github/workflows/project-ci.yml"
+        path.write_text("name: should-not-ship\n", encoding="utf-8")
+        result = self.run_verify(repo, "oimus1976/ai-dev-starter")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("template repository must not ship", result.stdout)
+
     def test_copied_template_fails_until_initialized(self) -> None:
         repo = self.make_copy()
         result = self.run_verify(repo)
@@ -54,7 +62,7 @@ class VerifyRepoTests(StarterTestCase):
         self.mutate_profile(repo, 'default_level = "ROUTINE"', 'default_level = "R1"')
         result = self.run_verify(repo, "oimus1976/ai-dev-starter")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("use ROUTINE, BOUNDARY, or HIGH_IMPACT", result.stdout)
+        self.assertIn("use ROUTINE, ELEVATED, or HIGH_IMPACT", result.stdout)
 
     def test_credentials_cannot_remain_routine(self) -> None:
         repo = self.make_copy()
@@ -93,7 +101,7 @@ class VerifyRepoTests(StarterTestCase):
 
     def test_exact_head_high_impact_policy_cannot_be_weakened(self) -> None:
         repo = self.make_copy()
-        self.mutate_profile(repo, 'exact_head_required_from_level = "HIGH_IMPACT"', 'exact_head_required_from_level = "BOUNDARY"')
+        self.mutate_profile(repo, 'exact_head_required_from_level = "HIGH_IMPACT"', 'exact_head_required_from_level = "ELEVATED"')
         result = self.run_verify(repo, "oimus1976/ai-dev-starter")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("exact_head_required_from_level must be HIGH_IMPACT", result.stdout)
