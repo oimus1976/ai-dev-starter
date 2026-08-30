@@ -29,7 +29,7 @@ For each material fact or state, identify exactly one authority where practical.
 - credentials;
 - release artifacts.
 
-A local chat, agent summary, or copied status message is never authoritative merely because it is convenient.
+A local chat, agent summary, or copied status message is never authoritative merely because it is convenient. A local worktree may temporarily be the only place containing an uncommitted edit, while GitHub may be authoritative for the PR head and Actions for CI results. Authority is determined by the fact being established, not by whichever location is newest overall.
 
 `PROJECT_PROFILE.toml` records the project authority map.
 
@@ -57,6 +57,8 @@ Disposable exploration/spikes may remain outside the full Issue/PR workflow if a
 - it does not touch actual/private data, credentials, production, destructive I/O, or another protected effect;
 - its output is treated as experimental evidence, not adopted behavior.
 
+Exploration is a lifecycle state, not a persistent risk level.
+
 Once work is intended to persist, it becomes a tracked change.
 
 For tracked changes:
@@ -64,7 +66,7 @@ For tracked changes:
 - use an explicit implementation branch;
 - do not use direct `main` write as the normal path;
 - use a Draft PR while implementation/review is in progress;
-- keep a durable intent record. R2/R3 changes require an Issue or equivalent durable work item; small R1 changes may use a sufficiently complete PR body.
+- keep a durable intent record. `BOUNDARY` and `HIGH_IMPACT` changes require an Issue or equivalent durable work item; small `ROUTINE` changes may use a sufficiently complete PR body.
 
 ## 5. Risk facets are composable
 
@@ -86,37 +88,37 @@ Facets are not mutually exclusive.
 
 The project records persistent facets in `PROJECT_PROFILE.toml`. Each PR declares change-specific facets.
 
-## 6. Risk tier and automatic escalation
+## 6. Risk levels and automatic escalation
 
-### R0 — disposable exploration
+Risk level is **not merely a count of how many components a change touches**. It combines the consequence of failure with sensitivity of the boundary being changed: authority, privacy, external mutation, destructive behavior, deployment, credentials, security controls, and real platform dependencies.
 
-No persistent adoption, no protected effect, no actual/private data.
+Use names rather than numeric `R1/R2/R3` codes so the meaning remains visible at the point of use.
 
-### R1 — routine tracked change
+### `ROUTINE` — ordinary bounded tracked change
 
-Ordinary application code/docs/tests with bounded local impact.
+Ordinary application code/docs/tests with bounded local impact and no sensitive boundary requiring escalation.
 
-### R2 — boundary-sensitive change
+### `BOUNDARY` — boundary-sensitive change
 
-At least one meaningful external/platform/privacy/agent/dependency/workflow boundary is involved, but the change does not directly control a high-impact authorization or destructive effect.
+At least one meaningful external/platform/privacy/agent/workflow boundary is involved, but the change does not directly control a high-impact authorization or destructive effect.
 
-### R3 — high-impact change
+### `HIGH_IMPACT` — high-impact change
 
 A failure could authorize, expose, destroy, irreversibly mutate, deploy, sign, or materially weaken a security boundary.
 
 Automatic minimum escalation:
 
-- `PRIVATE_DATA` -> R2
-- `EXTERNAL_WRITE` -> R2
-- `AI_AGENT` with mutation capability -> R2
-- `PLATFORM_DEPENDENT` where correctness depends on real OS/tool behavior -> R2
-- `WORKFLOW_PERMISSION` -> R2
-- `DESTRUCTIVE_IO` -> R3
-- `CREDENTIALS` -> R3
-- `DEPLOYMENT` -> R3
-- `SECURITY_BOUNDARY` -> R3
-- `HIGH_AUTHORITY` -> R3
-- `CRYPTOGRAPHY` used as a security control -> R3
+- `PRIVATE_DATA` -> `BOUNDARY`
+- `EXTERNAL_WRITE` -> `BOUNDARY`
+- `AI_AGENT` with mutation capability -> `BOUNDARY`
+- `PLATFORM_DEPENDENT` where correctness depends on real OS/tool behavior -> `BOUNDARY`
+- `WORKFLOW_PERMISSION` -> `BOUNDARY`
+- `DESTRUCTIVE_IO` -> `HIGH_IMPACT`
+- `CREDENTIALS` -> `HIGH_IMPACT`
+- `DEPLOYMENT` -> `HIGH_IMPACT`
+- `SECURITY_BOUNDARY` -> `HIGH_IMPACT`
+- `HIGH_AUTHORITY` -> `HIGH_IMPACT`
+- `CRYPTOGRAPHY` used as a security control -> `HIGH_IMPACT`
 
 AI may recommend escalation. AI must not silently downgrade below these minima.
 
@@ -149,7 +151,7 @@ Minimum defaults:
 - ordinary docs-only change -> lightweight structural check may be sufficient;
 - typo-only change -> no heavyweight re-review unless it changes meaning.
 
-R3 uses exact-head evidence by default.
+`HIGH_IMPACT` uses exact-head evidence by default.
 
 ## 9. Review independence
 
@@ -160,9 +162,9 @@ Review is not a boolean.
 - `L2` — separate agent/model or independently configured reviewer;
 - `L3` — materially different provider/toolchain plus human final judgment.
 
-R1: L1 recommended.  
-R2: L1 required; L2 preferred for material boundary changes.  
-R3: L2 minimum before human final action.
+`ROUTINE`: L1 recommended.  
+`BOUNDARY`: L1 required; L2 preferred for material boundary changes.  
+`HIGH_IMPACT`: L2 minimum before human final action.
 
 Repeated prompts to the same reviewer under unchanged evidence do not count as increasing independence.
 
@@ -212,7 +214,7 @@ House policy: **Ready and merge are human-final actions.** Projects may also des
 
 ## 13. Pre-effect freshness and postconditions
 
-For R3 protected mutations, and R2 where TOCTOU matters:
+For `HIGH_IMPACT` protected mutations, and `BOUNDARY` changes where TOCTOU matters:
 
 ```text
 plan
@@ -254,7 +256,7 @@ When a decision changes, supersede history rather than silently rewriting it.
 
 Documentation availability does not prove owner understanding.
 
-The owner should be able to explain, at the level required by the risk tier:
+The owner should be able to explain, at the level required by the risk level:
 
 1. what the project/change does;
 2. which authority owns the important facts;
@@ -275,35 +277,37 @@ Comprehension levels:
 
 Minimum persistent-change target:
 
-- R1 -> C1
-- R2 -> C1
-- R3 -> C2
+- `ROUTINE` -> C1
+- `BOUNDARY` -> C1
+- `HIGH_IMPACT` -> C2
 
 If the owner cannot meet the required level, stop feature growth and pay down comprehension debt before accepting more complexity.
 
-## 17. Review severity
+## 17. Review finding severity
 
-- `P0` — catastrophic/high-impact: data loss, secret exposure, authority bypass, equivalent;
-- `P1` — intended-use correctness/safety defect;
-- `P2` — edge case, maintainability, coverage, bounded weakness;
-- `P3` — polish/preference/future improvement.
+Use words rather than reverse-numbered `P0/P1/...` labels. The purpose is to make severity understandable without memorizing whether a larger or smaller number is worse.
 
-P0/P1 must be fixed, scoped out, or explicitly block acceptance.
+- `CRITICAL` — catastrophic/high-impact: data loss, secret exposure, authority bypass, equivalent;
+- `MAJOR` — intended-use correctness/safety defect;
+- `MINOR` — edge case, maintainability, coverage, bounded weakness;
+- `NOTE` — polish/preference/future improvement.
 
-P2 may be fixed or deliberately deferred with residual risk recorded.
+`CRITICAL` and `MAJOR` must be fixed, scoped out, or explicitly block acceptance.
 
-P3 normally does not block.
+`MINOR` may be fixed or deliberately deferred with residual risk recorded.
+
+`NOTE` normally does not block.
 
 ## 18. Review stop conditions
 
 Stop adversarial review for a change when all applicable conditions hold:
 
-1. P0 = 0;
-2. P1 = 0;
+1. `CRITICAL` findings = 0;
+2. `MAJOR` findings = 0;
 3. acceptance criteria are satisfied;
 4. required tests/CI pass on the final relevant revision;
-5. R3 has final relevant exact-head independent review at required level;
-6. unresolved P2 items are recorded or intentionally accepted;
+5. `HIGH_IMPACT` has final relevant exact-head independent review at required level;
+6. unresolved `MINOR` findings are recorded or intentionally accepted;
 7. required real-boundary smoke is complete;
 8. documentation does not materially contradict implementation;
 9. the human has enough evidence to judge residual risk;
@@ -311,17 +315,30 @@ Stop adversarial review for a change when all applicable conditions hold:
 
 Anti-loop rules:
 
-- If the same safety invariant produces P1 after two remediation attempts, perform an architecture/scope review before a third patch.
+- If the same safety invariant produces a `MAJOR` finding after two remediation attempts, perform an architecture/scope review before a third patch.
 - After five material review/fix cycles, perform an architecture/scope reset review before another patch.
 - Once the final relevant revision receives a clean required-level adversarial review, do not ask the same reviewer the same question again without new evidence, code, threat, or scope.
 
-## 19. Dependency/action pinning is lifecycle management
+## 19. Project CI starts absent, not falsely green
+
+The template ships `policy-check.yml`, but **does not ship an active project-specific CI workflow**.
+
+A generated repository must add `.github/workflows/project-ci.yml` for its actual language/runtime/tests. Until that file exists, policy-check fails.
+
+This avoids two bad states:
+
+- a copied dummy CI that looks like real project validation;
+- no signal at all that project CI is still missing.
+
+The absence is deliberate and visible. Adding a real project CI workflow is part of project initialization.
+
+## 20. Dependency/action pinning is lifecycle management
 
 Pinning improves reproducibility but can freeze vulnerable versions.
 
 When dependencies/actions are pinned, also record enough version context to update them and define a maintenance path. Pinning without an update mechanism is incomplete supply-chain hygiene.
 
-## 20. Baseline changes
+## 21. Baseline changes
 
 Changes to this baseline itself are governed like architecture changes:
 
