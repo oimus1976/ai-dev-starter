@@ -1,12 +1,12 @@
 ## Goal / scope
 
 - Goal:
-- Durable work item (Issue/equivalent, required for `BOUNDARY` / `HIGH_IMPACT`):
+- Durable work item (Issue/equivalent, required for `ELEVATED` / `HIGH_IMPACT`):
 - Intended changed paths/components:
 
 ## Risk classification
 
-- Level: `ROUTINE` / `BOUNDARY` / `HIGH_IMPACT`
+- Level: `ROUTINE` / `ELEVATED` / `HIGH_IMPACT`
 - Facets:
 - Automatic escalation checked: yes / no
 
