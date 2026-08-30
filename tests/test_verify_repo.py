@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VERIFY = Path("scripts/verify_repo.py")
 BOOTSTRAP = Path("scripts/bootstrap.py")
+POLICY_CHECK = Path(".github/workflows/policy-check.yml")
 
 
 class StarterTestCase(unittest.TestCase):
@@ -50,12 +51,20 @@ class VerifyRepoTests(StarterTestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("template repository must not ship", result.stdout)
 
+    def test_policy_check_does_not_persist_checkout_credentials(self) -> None:
+        text = (ROOT / POLICY_CHECK).read_text(encoding="utf-8")
+        self.assertIn("persist-credentials: false", text)
+        self.assertNotIn("persist-credentials: true", text)
+
     def test_copied_template_fails_until_initialized(self) -> None:
         repo = self.make_copy()
         result = self.run_verify(repo)
         self.assertNotEqual(result.returncode, 0)
+        self.assertIn("INITIALIZATION REQUIRED", result.stdout)
+        self.assertIn("NEXT STEPS:", result.stdout)
         self.assertIn("starter placeholder", result.stdout)
         self.assertIn("project-specific CI workflow is missing", result.stdout)
+        self.assertLess(result.stdout.index("INITIALIZATION REQUIRED"), result.stdout.index("starter placeholder"))
 
     def test_legacy_numeric_risk_code_is_rejected(self) -> None:
         repo = self.make_copy()
