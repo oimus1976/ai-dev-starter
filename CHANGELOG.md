@@ -17,3 +17,4 @@ Do not copy long implementation chronology that already exists in Git/PR history
 ### Baseline
 
 - Initial project scaffold from oimus AI Development Starter v0.5.
+- Hardened the template policy workflow after the first real template-generation smoke: checkout credentials are no longer persisted, generated-repo initialization failures now lead with actionable next steps, and observed GitHub branch-protection/ruleset limits are recorded. See Issue #3.
