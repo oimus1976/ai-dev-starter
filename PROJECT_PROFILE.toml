@@ -27,7 +27,8 @@ persistent_facets = []
 # SECURITY_BOUNDARY, HIGH_AUTHORITY, PLATFORM_DEPENDENT,
 # CREDENTIALS, DEPLOYMENT, CRYPTOGRAPHY, WORKFLOW_PERMISSION
 # AI_AGENT means runtime agent authority/mutation, not merely AI-assisted development.
-default_tier = "R1"
+# Risk levels are named rather than numbered to reduce comprehension debt.
+default_level = "ROUTINE" # ROUTINE | BOUNDARY | HIGH_IMPACT
 
 [comprehension]
 required_level = "C1" # C0 Operate | C1 Diagnose | C2 Govern
@@ -52,4 +53,4 @@ evidence = "TODO"
 [verification]
 real_boundary_smoke_required = false
 test_matrix_required = false
-exact_head_required_from_tier = "R3"
+exact_head_required_from_level = "HIGH_IMPACT"
