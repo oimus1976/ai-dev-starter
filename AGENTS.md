@@ -6,7 +6,7 @@ This repository uses the oimus AI Development Baseline.
 
 1. Read `PROJECT_STATUS.md`, `PROJECT_PROFILE.toml`, and relevant ADR/design docs.
 2. Identify the intended work item/PR and target branch.
-3. State the change-specific risk facets and derived risk tier.
+3. State the change-specific risk facets and derived risk level: `ROUTINE`, `BOUNDARY`, or `HIGH_IMPACT`.
 4. Escalate automatically when the change touches credentials, deployment, destructive I/O, security/authority logic, private data, external writes, workflow permissions, or real platform behavior.
 5. If you cannot establish the target repository/branch/work item, stop before writing.
 
@@ -40,9 +40,9 @@ Do not claim Ready, merge, deploy, release, or another protected effect merely b
 
 A remediation creates a new change that may invalidate prior evidence.
 
-Re-run the evidence required by the change type/risk tier. R3 security/authority changes require exact-head revalidation and independent review.
+Re-run the evidence required by the change type/risk level. `HIGH_IMPACT` security/authority changes require exact-head revalidation and independent review.
 
-If the same P1 safety invariant survives two remediation attempts, stop patching and request an architecture/scope review.
+If the same `MAJOR` safety invariant survives two remediation attempts, stop patching and request an architecture/scope review.
 
 ## Human comprehension
 
