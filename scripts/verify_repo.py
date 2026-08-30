@@ -31,14 +31,14 @@ REQUIRED = [
     "tests/test_verify_repo.py",
 ]
 
-RISK_ORDER = {"ROUTINE": 1, "BOUNDARY": 2, "HIGH_IMPACT": 3}
+RISK_ORDER = {"ROUTINE": 1, "ELEVATED": 2, "HIGH_IMPACT": 3}
 COMP_ORDER = {"C0": 0, "C1": 1, "C2": 2}
 FACET_MIN_LEVEL = {
-    "PRIVATE_DATA": "BOUNDARY",
-    "EXTERNAL_WRITE": "BOUNDARY",
-    "AI_AGENT": "BOUNDARY",  # Runtime agent authority/mutation, not AI-assisted coding.
-    "PLATFORM_DEPENDENT": "BOUNDARY",
-    "WORKFLOW_PERMISSION": "BOUNDARY",
+    "PRIVATE_DATA": "ELEVATED",
+    "EXTERNAL_WRITE": "ELEVATED",
+    "AI_AGENT": "ELEVATED",  # Runtime agent authority/mutation, not AI-assisted coding.
+    "PLATFORM_DEPENDENT": "ELEVATED",
+    "WORKFLOW_PERMISSION": "ELEVATED",
     "DESTRUCTIVE_IO": "HIGH_IMPACT",
     "CREDENTIALS": "HIGH_IMPACT",
     "DEPLOYMENT": "HIGH_IMPACT",
@@ -46,7 +46,7 @@ FACET_MIN_LEVEL = {
     "HIGH_AUTHORITY": "HIGH_IMPACT",
     "CRYPTOGRAPHY": "HIGH_IMPACT",
 }
-LEVEL_MIN_COMP = {"ROUTINE": "C1", "BOUNDARY": "C1", "HIGH_IMPACT": "C2"}
+LEVEL_MIN_COMP = {"ROUTINE": "C1", "ELEVATED": "C1", "HIGH_IMPACT": "C2"}
 ALLOWED_LIFECYCLES = {"experimental", "active", "production"}
 ALLOWED_PROJECT_DEFAULT_LEVELS = set(RISK_ORDER)
 ALLOWED_ENFORCEMENT_STATES = {"DECLARED", "ENFORCED", "VERIFIED", "UNKNOWN"}
@@ -108,7 +108,7 @@ if profile:
 
     if level not in ALLOWED_PROJECT_DEFAULT_LEVELS:
         errors.append(
-            f"invalid risk.default_level: {level!r}; use ROUTINE, BOUNDARY, or HIGH_IMPACT"
+            f"invalid risk.default_level: {level!r}; use ROUTINE, ELEVATED, or HIGH_IMPACT"
         )
     if comp not in COMP_ORDER:
         errors.append(f"invalid comprehension.required_level: {comp!r}")
@@ -200,8 +200,13 @@ if status_path.is_file():
             "PROJECT_STATUS.md still contains TODO; replace each with a concrete value or explicit 'none/N/A'"
         )
 
-if not is_template_repository:
-    project_ci_path = ROOT / PROJECT_CI
+project_ci_path = ROOT / PROJECT_CI
+if is_template_repository:
+    if project_ci_path.exists():
+        errors.append(
+            "template repository must not ship .github/workflows/project-ci.yml; generated projects add their real CI after creation"
+        )
+else:
     if not project_ci_path.is_file() or project_ci_path.stat().st_size == 0:
         errors.append(
             "project-specific CI workflow is missing; add .github/workflows/project-ci.yml before accepting tracked implementation"
