@@ -28,6 +28,7 @@ REQUIRED = [
     ".github/workflows/policy-check.yml",
     ".github/workflows/ci.yml",
     "scripts/bootstrap.py",
+    "tests/test_verify_repo.py",
 ]
 
 TIER_ORDER = {"R0": 0, "R1": 1, "R2": 2, "R3": 3}
@@ -47,6 +48,7 @@ FACET_MIN_TIER = {
 }
 TIER_MIN_COMP = {"R0": "C0", "R1": "C1", "R2": "C1", "R3": "C2"}
 ALLOWED_LIFECYCLES = {"experimental", "active", "production"}
+ALLOWED_PROJECT_DEFAULT_TIERS = {"R1", "R2", "R3"}
 ALLOWED_ENFORCEMENT_STATES = {"DECLARED", "ENFORCED", "VERIFIED", "UNKNOWN"}
 
 parser = argparse.ArgumentParser()
@@ -104,8 +106,10 @@ if profile:
         if unknown:
             errors.append(f"unknown risk facets: {', '.join(unknown)}")
 
-    if tier not in TIER_ORDER:
-        errors.append(f"invalid risk.default_tier: {tier!r}")
+    if tier not in ALLOWED_PROJECT_DEFAULT_TIERS:
+        errors.append(
+            f"invalid risk.default_tier: {tier!r}; persistent project defaults must be R1, R2, or R3"
+        )
     if comp not in COMP_ORDER:
         errors.append(f"invalid comprehension.required_level: {comp!r}")
 
@@ -132,6 +136,17 @@ if profile:
     if need(profile, ("governance", "merge")) != "human_final":
         errors.append("house policy violation: governance.merge must be human_final")
 
+    if need(profile, ("enforcement", "main_direct_write", "desired")) != "forbidden_normal_path":
+        errors.append(
+            "house policy violation: enforcement.main_direct_write.desired must be forbidden_normal_path"
+        )
+    if need(profile, ("enforcement", "required_ci", "desired")) is not True:
+        errors.append("house policy violation: enforcement.required_ci.desired must be true")
+    if need(profile, ("verification", "exact_head_required_from_tier")) != "R3":
+        errors.append(
+            "house policy violation: verification.exact_head_required_from_tier must be R3"
+        )
+
     for branch in ("main_direct_write", "required_ci"):
         state = need(profile, ("enforcement", branch, "state"))
         if state not in ALLOWED_ENFORCEMENT_STATES:
@@ -150,6 +165,29 @@ if profile:
                     f"PROJECT_PROFILE.toml still contains required starter placeholder at {'.'.join(path)}: {value}"
                 )
         find_placeholders(profile)
+
+        required_nonempty_strings = [
+            ("project", "name"),
+            ("project", "purpose"),
+            ("authority", "planning"),
+            ("authority", "execution"),
+            ("authority", "source_code"),
+            ("authority", "private_actual_data"),
+            ("authority", "ci_result"),
+            ("authority", "review_result"),
+            ("authority", "production_state"),
+            ("authority", "credentials"),
+            ("authority", "release_artifacts"),
+            ("comprehension", "owner_checkpoint"),
+            ("enforcement", "main_direct_write", "evidence"),
+            ("enforcement", "required_ci", "evidence"),
+        ]
+        for path in required_nonempty_strings:
+            value = need(profile, path)
+            if not isinstance(value, str) or not value.strip():
+                errors.append(
+                    f"PROJECT_PROFILE.toml requires a non-empty string at {'.'.join(path)}"
+                )
 
 status_path = ROOT / "PROJECT_STATUS.md"
 if status_path.is_file():
