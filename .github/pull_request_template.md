@@ -1,12 +1,12 @@
 ## Goal / scope
 
 - Goal:
-- Durable work item (Issue/equivalent, required for R2/R3):
+- Durable work item (Issue/equivalent, required for `BOUNDARY` / `HIGH_IMPACT`):
 - Intended changed paths/components:
 
 ## Risk classification
 
-- Tier: R0 / R1 / R2 / R3
+- Level: `ROUTINE` / `BOUNDARY` / `HIGH_IMPACT`
 - Facets:
 - Automatic escalation checked: yes / no
 
@@ -38,7 +38,9 @@ Which prior evidence became invalid because of this change?
 
 -
 
-## Residual risk / deferred P2+
+## Residual findings / risk
+
+Use `CRITICAL`, `MAJOR`, `MINOR`, or `NOTE` rather than reverse-numbered priority codes.
 
 -
 
