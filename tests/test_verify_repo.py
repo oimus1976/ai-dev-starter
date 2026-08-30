@@ -60,11 +60,28 @@ class VerifyRepoTests(StarterTestCase):
         repo = self.make_copy()
         result = self.run_verify(repo)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("INITIALIZATION REQUIRED", result.stdout)
+        self.assertIn("PROJECT SETUP INCOMPLETE", result.stdout)
+        self.assertIn("Fresh-copy shortcut:", result.stdout)
         self.assertIn("NEXT STEPS:", result.stdout)
         self.assertIn("starter placeholder", result.stdout)
         self.assertIn("project-specific CI workflow is missing", result.stdout)
-        self.assertLess(result.stdout.index("INITIALIZATION REQUIRED"), result.stdout.index("starter placeholder"))
+        self.assertLess(result.stdout.index("PROJECT SETUP INCOMPLETE"), result.stdout.index("starter placeholder"))
+
+    def test_partial_initialization_does_not_offer_fresh_copy_bootstrap(self) -> None:
+        repo = self.make_copy()
+        self.mutate_profile(repo, 'name = "TODO"', 'name = "Example"')
+        self.mutate_profile(repo, 'purpose = "TODO"', 'purpose = "Example purpose"')
+        status_path = repo / "PROJECT_STATUS.md"
+        status = status_path.read_text(encoding="utf-8")
+        self.assertIn("- **Goal:** TODO", status)
+        status_path.write_text(status.replace("- **Goal:** TODO", "- **Goal:** Example purpose", 1), encoding="utf-8")
+
+        result = self.run_verify(repo)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("PROJECT SETUP INCOMPLETE", result.stdout)
+        self.assertIn("Complete only the remaining TODO/TODO_OR_NA values", result.stdout)
+        self.assertNotIn("Fresh-copy shortcut:", result.stdout)
 
     def test_legacy_numeric_risk_code_is_rejected(self) -> None:
         repo = self.make_copy()
