@@ -47,28 +47,28 @@ class VerifyRepoTests(StarterTestCase):
         result = self.run_verify(repo)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("starter placeholder", result.stdout)
-        self.assertIn("project CI is still", result.stdout)
+        self.assertIn("project-specific CI workflow is missing", result.stdout)
 
-    def test_persistent_default_cannot_be_r0(self) -> None:
+    def test_legacy_numeric_risk_code_is_rejected(self) -> None:
         repo = self.make_copy()
-        self.mutate_profile(repo, 'default_tier = "R1"', 'default_tier = "R0"')
+        self.mutate_profile(repo, 'default_level = "ROUTINE"', 'default_level = "R1"')
         result = self.run_verify(repo, "oimus1976/ai-dev-starter")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("persistent project defaults must be R1, R2, or R3", result.stdout)
+        self.assertIn("use ROUTINE, BOUNDARY, or HIGH_IMPACT", result.stdout)
 
-    def test_credentials_cannot_remain_r1(self) -> None:
+    def test_credentials_cannot_remain_routine(self) -> None:
         repo = self.make_copy()
         self.mutate_profile(repo, "persistent_facets = []", 'persistent_facets = ["CREDENTIALS"]')
         result = self.run_verify(repo, "oimus1976/ai-dev-starter")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("facets require at least R3", result.stdout)
+        self.assertIn("facets require at least HIGH_IMPACT", result.stdout)
 
-    def test_r3_requires_c2(self) -> None:
+    def test_high_impact_requires_c2(self) -> None:
         repo = self.make_copy()
-        self.mutate_profile(repo, 'default_tier = "R1"', 'default_tier = "R3"')
+        self.mutate_profile(repo, 'default_level = "ROUTINE"', 'default_level = "HIGH_IMPACT"')
         result = self.run_verify(repo, "oimus1976/ai-dev-starter")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("R3 requires at least C2", result.stdout)
+        self.assertIn("HIGH_IMPACT requires at least C2", result.stdout)
 
     def test_empty_authority_is_rejected_in_copied_repo(self) -> None:
         repo = self.make_copy()
@@ -91,12 +91,21 @@ class VerifyRepoTests(StarterTestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("required_ci.desired must be true", result.stdout)
 
-    def test_exact_head_r3_policy_cannot_be_weakened(self) -> None:
+    def test_exact_head_high_impact_policy_cannot_be_weakened(self) -> None:
         repo = self.make_copy()
-        self.mutate_profile(repo, 'exact_head_required_from_tier = "R3"', 'exact_head_required_from_tier = "R2"')
+        self.mutate_profile(repo, 'exact_head_required_from_level = "HIGH_IMPACT"', 'exact_head_required_from_level = "BOUNDARY"')
         result = self.run_verify(repo, "oimus1976/ai-dev-starter")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("exact_head_required_from_tier must be R3", result.stdout)
+        self.assertIn("exact_head_required_from_level must be HIGH_IMPACT", result.stdout)
+
+    def test_project_ci_file_removes_ci_missing_error(self) -> None:
+        repo = self.make_copy()
+        first = self.run_verify(repo)
+        self.assertIn("project-specific CI workflow is missing", first.stdout)
+        path = repo / ".github/workflows/project-ci.yml"
+        path.write_text("name: project-ci\non: [pull_request]\njobs: {}\n", encoding="utf-8")
+        second = self.run_verify(repo)
+        self.assertNotIn("project-specific CI workflow is missing", second.stdout)
 
 
 class BootstrapTests(StarterTestCase):
