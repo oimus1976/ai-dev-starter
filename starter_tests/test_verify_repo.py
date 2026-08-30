@@ -56,6 +56,8 @@ class VerifyRepoTests(StarterTestCase):
         self.assertIn("ref: ${{ github.event.pull_request.head.sha || github.sha }}", text)
         self.assertIn("persist-credentials: false", text)
         self.assertNotIn("persist-credentials: true", text)
+        self.assertIn("python -m unittest discover -s starter_tests -v", text)
+        self.assertNotIn("python -m unittest discover -s tests -v", text)
 
     def test_copied_template_fails_until_initialized(self) -> None:
         repo = self.make_copy()
@@ -144,6 +146,40 @@ class VerifyRepoTests(StarterTestCase):
 
 
 class BootstrapTests(StarterTestCase):
+    def test_bootstrapped_project_tests_are_not_polluted_by_starter_regressions(self) -> None:
+        repo = self.make_copy()
+        bootstrap = subprocess.run(
+            [sys.executable, str(BOOTSTRAP), "--name", "Example", "--purpose", "Example purpose"],
+            cwd=repo,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        self.assertEqual(bootstrap.returncode, 0, bootstrap.stdout)
+
+        tests = repo / "tests"
+        tests.mkdir(exist_ok=True)
+        (tests / "test_project.py").write_text(
+            "import unittest\n\n"
+            "class ProjectTests(unittest.TestCase):\n"
+            "    def test_project_suite(self):\n"
+            "        self.assertTrue(True)\n",
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"],
+            cwd=repo,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("test_project_suite", result.stdout)
+        self.assertNotIn("VerifyRepoTests", result.stdout)
+
     def test_preflight_failure_does_not_partially_change_profile(self) -> None:
         repo = self.make_copy()
         profile_path = repo / "PROJECT_PROFILE.toml"

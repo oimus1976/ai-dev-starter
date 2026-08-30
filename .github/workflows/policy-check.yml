@@ -29,6 +29,6 @@ jobs:
         run: python -m py_compile scripts/bootstrap.py scripts/verify_repo.py
       - name: Run canonical starter regression tests
         if: github.repository == 'oimus1976/ai-dev-starter'
-        run: python -m unittest discover -s tests -v
+        run: python -m unittest discover -s starter_tests -v
       - name: Verify baseline structure and adoption state
         run: python scripts/verify_repo.py --repository "${{ github.repository }}"
