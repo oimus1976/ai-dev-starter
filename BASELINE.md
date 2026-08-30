@@ -66,7 +66,7 @@ For tracked changes:
 - use an explicit implementation branch;
 - do not use direct `main` write as the normal path;
 - use a Draft PR while implementation/review is in progress;
-- keep a durable intent record. `BOUNDARY` and `HIGH_IMPACT` changes require an Issue or equivalent durable work item; small `ROUTINE` changes may use a sufficiently complete PR body.
+- keep a durable intent record. `ELEVATED` and `HIGH_IMPACT` changes require an Issue or equivalent durable work item; small `ROUTINE` changes may use a sufficiently complete PR body.
 
 ## 5. Risk facets are composable
 
@@ -90,29 +90,29 @@ The project records persistent facets in `PROJECT_PROFILE.toml`. Each PR declare
 
 ## 6. Risk levels and automatic escalation
 
-Risk level is **not merely a count of how many components a change touches**. It combines the consequence of failure with sensitivity of the boundary being changed: authority, privacy, external mutation, destructive behavior, deployment, credentials, security controls, and real platform dependencies.
+Risk level is **not merely a count of how many components a change touches**. It combines the consequence of failure with the sensitivity of the behavior being changed: blast radius, authority, privacy, external mutation, destructive behavior, deployment, credentials, security controls, and real platform dependencies.
 
 Use names rather than numeric `R1/R2/R3` codes so the meaning remains visible at the point of use.
 
 ### `ROUTINE` — ordinary bounded tracked change
 
-Ordinary application code/docs/tests with bounded local impact and no sensitive boundary requiring escalation.
+Ordinary application code/docs/tests with bounded local impact and no reason for stronger verification.
 
-### `BOUNDARY` — boundary-sensitive change
+### `ELEVATED` — increased impact or boundary sensitivity
 
-At least one meaningful external/platform/privacy/agent/workflow boundary is involved, but the change does not directly control a high-impact authorization or destructive effect.
+Use when a change has broader operational/correctness impact or involves a meaningful external/platform/privacy/agent/dependency/workflow boundary, while not directly controlling a high-impact authorization or destructive effect.
 
 ### `HIGH_IMPACT` — high-impact change
 
-A failure could authorize, expose, destroy, irreversibly mutate, deploy, sign, or materially weaken a security boundary.
+Use when failure could authorize, expose, destroy, irreversibly mutate, deploy, sign, corrupt critical state, cause a comparable critical outage, or materially weaken a security boundary.
 
 Automatic minimum escalation:
 
-- `PRIVATE_DATA` -> `BOUNDARY`
-- `EXTERNAL_WRITE` -> `BOUNDARY`
-- `AI_AGENT` with mutation capability -> `BOUNDARY`
-- `PLATFORM_DEPENDENT` where correctness depends on real OS/tool behavior -> `BOUNDARY`
-- `WORKFLOW_PERMISSION` -> `BOUNDARY`
+- `PRIVATE_DATA` -> `ELEVATED`
+- `EXTERNAL_WRITE` -> `ELEVATED`
+- `AI_AGENT` with mutation capability -> `ELEVATED`
+- `PLATFORM_DEPENDENT` where correctness depends on real OS/tool behavior -> `ELEVATED`
+- `WORKFLOW_PERMISSION` -> `ELEVATED`
 - `DESTRUCTIVE_IO` -> `HIGH_IMPACT`
 - `CREDENTIALS` -> `HIGH_IMPACT`
 - `DEPLOYMENT` -> `HIGH_IMPACT`
@@ -120,7 +120,7 @@ Automatic minimum escalation:
 - `HIGH_AUTHORITY` -> `HIGH_IMPACT`
 - `CRYPTOGRAPHY` used as a security control -> `HIGH_IMPACT`
 
-AI may recommend escalation. AI must not silently downgrade below these minima.
+AI may recommend escalation. AI must not silently downgrade below these minima. A change may also be escalated because its blast radius or failure consequence is larger than its facets alone suggest.
 
 ## 7. Uncertainty policy
 
@@ -163,7 +163,7 @@ Review is not a boolean.
 - `L3` — materially different provider/toolchain plus human final judgment.
 
 `ROUTINE`: L1 recommended.  
-`BOUNDARY`: L1 required; L2 preferred for material boundary changes.  
+`ELEVATED`: L1 required; L2 preferred for material boundary changes.  
 `HIGH_IMPACT`: L2 minimum before human final action.
 
 Repeated prompts to the same reviewer under unchanged evidence do not count as increasing independence.
@@ -214,7 +214,7 @@ House policy: **Ready and merge are human-final actions.** Projects may also des
 
 ## 13. Pre-effect freshness and postconditions
 
-For `HIGH_IMPACT` protected mutations, and `BOUNDARY` changes where TOCTOU matters:
+For `HIGH_IMPACT` protected mutations, and `ELEVATED` changes where TOCTOU matters:
 
 ```text
 plan
@@ -278,7 +278,7 @@ Comprehension levels:
 Minimum persistent-change target:
 
 - `ROUTINE` -> C1
-- `BOUNDARY` -> C1
+- `ELEVATED` -> C1
 - `HIGH_IMPACT` -> C2
 
 If the owner cannot meet the required level, stop feature growth and pay down comprehension debt before accepting more complexity.
@@ -330,7 +330,9 @@ This avoids two bad states:
 - a copied dummy CI that looks like real project validation;
 - no signal at all that project CI is still missing.
 
-The absence is deliberate and visible. Adding a real project CI workflow is part of project initialization.
+The canonical template verifier also rejects accidentally adding `project-ci.yml` back into the template, so this absence is an intentional invariant rather than a convention.
+
+`policy-check` can establish that the required workflow file has been deliberately added; it cannot determine whether arbitrary project tests are sufficient. Acceptance still requires evidence from the actual project CI run. A green policy-check alone must not be reported as successful project validation.
 
 ## 20. Dependency/action pinning is lifecycle management
 
