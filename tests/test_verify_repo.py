@@ -51,8 +51,9 @@ class VerifyRepoTests(StarterTestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("template repository must not ship", result.stdout)
 
-    def test_policy_check_does_not_persist_checkout_credentials(self) -> None:
+    def test_policy_check_uses_exact_pr_head_without_persisted_credentials(self) -> None:
         text = (ROOT / POLICY_CHECK).read_text(encoding="utf-8")
+        self.assertIn("ref: ${{ github.event.pull_request.head.sha || github.sha }}", text)
         self.assertIn("persist-credentials: false", text)
         self.assertNotIn("persist-credentials: true", text)
 
