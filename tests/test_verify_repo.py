@@ -9,15 +9,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VERIFY = Path("scripts/verify_repo.py")
+BOOTSTRAP = Path("scripts/bootstrap.py")
 
 
-class VerifyRepoTests(unittest.TestCase):
+class StarterTestCase(unittest.TestCase):
     def make_copy(self) -> Path:
         temp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, temp, True)
         shutil.copytree(ROOT, temp / "repo", dirs_exist_ok=True, ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"))
         return temp / "repo"
 
+
+class VerifyRepoTests(StarterTestCase):
     def run_verify(self, repo: Path, identity: str = "example/project") -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [sys.executable, str(VERIFY), "--repository", identity],
@@ -94,6 +97,30 @@ class VerifyRepoTests(unittest.TestCase):
         result = self.run_verify(repo, "oimus1976/ai-dev-starter")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("exact_head_required_from_tier must be R3", result.stdout)
+
+
+class BootstrapTests(StarterTestCase):
+    def test_preflight_failure_does_not_partially_change_profile(self) -> None:
+        repo = self.make_copy()
+        profile_path = repo / "PROJECT_PROFILE.toml"
+        status_path = repo / "PROJECT_STATUS.md"
+        original_profile = profile_path.read_text(encoding="utf-8")
+        status = status_path.read_text(encoding="utf-8")
+        self.assertIn("- **Goal:** TODO", status)
+        status_path.write_text(status.replace("- **Goal:** TODO", "- **Goal:** missing-marker", 1), encoding="utf-8")
+
+        result = subprocess.run(
+            [sys.executable, str(BOOTSTRAP), "--name", "Example", "--purpose", "Example purpose"],
+            cwd=repo,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("PROJECT_STATUS goal placeholder", result.stdout)
+        self.assertEqual(profile_path.read_text(encoding="utf-8"), original_profile)
 
 
 if __name__ == "__main__":
