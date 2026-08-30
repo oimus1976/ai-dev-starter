@@ -72,6 +72,8 @@ Exploration that is genuinely disposable does not need Issue/PR ceremony. Once w
 - `.github/workflows/project-ci.yml` — intentionally **absent** from the template; each generated project must add its own real CI.
 - `scripts/bootstrap.py` — dependency-free identity initializer.
 - `scripts/verify_repo.py` — dependency-free starter consistency check.
+- `starter_tests/` — regression tests for ai-dev-starter itself.
+- `tests/` — reserved for generated projects' own tests.
 
 ## Baseline freshness
 
