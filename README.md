@@ -2,7 +2,7 @@
 
 A project starter for AI-assisted development that keeps human ownership, evidence, and recoverability ahead of implementation speed.
 
-This is a **house baseline**, not a universal software-development standard. It was distilled from recent active projects and is intentionally risk-based: small experiments stay light, while changes that touch authority, private data, destructive I/O, deployment, credentials, security boundaries, or real platform behavior receive stronger gates.
+This is a **house baseline**, not a universal software-development standard. It was distilled from recent active projects and is intentionally risk-based: small experiments stay light, while changes that touch authority, private data, destructive I/O, deployment, credentials, security boundaries, real platform behavior, or broad system behavior receive stronger gates.
 
 ## Core idea
 
@@ -26,13 +26,15 @@ The starter therefore separates:
 6. Add a project-specific `.github/workflows/project-ci.yml`. The starter does **not** copy an active dummy project CI workflow. Until your project CI exists, `policy-check` fails closed instead of presenting an unexplained green state.
 7. Run `python scripts/verify_repo.py`.
 
+`policy-check` can establish that the required project CI workflow has been deliberately added; it cannot prove that the workflow's tests are sufficient. Acceptance still requires evidence from the actual project CI run.
+
 ## Risk language
 
 Risk levels use names rather than `R1/R2/R3` codes:
 
 - `ROUTINE` — ordinary bounded tracked change;
-- `BOUNDARY` — external/platform/privacy/agent/workflow boundary is involved;
-- `HIGH_IMPACT` — failure could authorize, expose, destroy, deploy, sign, or weaken a security boundary.
+- `ELEVATED` — broader impact or a meaningful external/platform/privacy/agent/workflow boundary;
+- `HIGH_IMPACT` — failure could authorize, expose, destroy, deploy, sign, corrupt critical state, or weaken a security boundary.
 
 Review findings also use words rather than reverse-numbered `P0/P1/...` labels: `CRITICAL`, `MAJOR`, `MINOR`, `NOTE`.
 
@@ -66,7 +68,7 @@ Exploration that is genuinely disposable does not need Issue/PR ceremony. Once w
 - `AGENTS.md` — instructions for AI coding agents.
 - `docs/adr/` — durable architecture decisions when warranted.
 - `.github/pull_request_template.md` — review/evidence/comprehension checklist.
-- `.github/workflows/policy-check.yml` — starter structural check and baseline self-test.
+- `.github/workflows/policy-check.yml` — starter structural check; canonical starter regression tests run only in the template repository.
 - `.github/workflows/project-ci.yml` — intentionally **absent** from the template; each generated project must add its own real CI.
 - `scripts/bootstrap.py` — dependency-free identity initializer.
 - `scripts/verify_repo.py` — dependency-free starter consistency check.
