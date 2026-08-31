@@ -81,6 +81,15 @@ class LocalCloseoutTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("does not match origin/main", result.stdout)
 
+    def test_fails_when_local_main_is_ahead_of_origin(self) -> None:
+        (self.repo / "tracked.txt").write_text("local advanced\n", encoding="utf-8")
+        run("git", "add", "tracked.txt", cwd=self.repo)
+        run("git", "commit", "-m", "local-only commit", cwd=self.repo)
+
+        result = self.verify()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("does not match origin/main", result.stdout)
+
     def test_fails_when_fetch_cannot_establish_freshness(self) -> None:
         run("git", "remote", "set-url", "origin", str(self.temp / "missing.git"), cwd=self.repo)
         result = self.verify()
