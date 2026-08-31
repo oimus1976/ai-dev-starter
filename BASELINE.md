@@ -349,3 +349,26 @@ Changes to this baseline itself are governed like architecture changes:
 - prefer evidence from recent real projects;
 - do not accumulate rules solely because one project once needed them;
 - remove or demote rules that repeatedly create ceremony without reducing observed risk.
+
+## 22. Post-merge local closeout is a separate gate
+
+Human merge completion establishes the canonical GitHub effect. It does not establish the state of a developer's local checkout.
+
+When a tracked PR used a local checkout or worktree, treat **post-merge local closeout** as a separate gate before that checkout is considered ready for the next tracked implementation.
+
+Minimum closeout postconditions:
+
+1. GitHub independently confirms that the intended PR was merged;
+2. the canonical remote is freshly fetched;
+3. the active checkout is on canonical `main`, unless the project explicitly defines another canonical branch;
+4. the working tree, including untracked files, is clean;
+5. no merge, rebase, cherry-pick, revert, or bisect operation is in progress;
+6. local `HEAD` exactly matches the freshly observed canonical remote branch (`origin/main` by default).
+
+The local gate proves only that the canonical checkout is synchronized and clean enough to start the next work item. It does **not** require deleting topic branches or extra worktrees merely because a PR merged.
+
+Use `scripts/verify_local_closeout.py` where available. It may perform `git fetch` to establish freshness. It must not reset, stash, discard files, delete branches/worktrees, or perform other destructive cleanup merely to make the gate pass.
+
+If local closeout fails, preserve intentional local work first. Report the unresolved local state and remediate it explicitly; do not convert a failed closeout check into permission for destructive cleanup.
+
+A task may be **merged but locally not closed out**. Keep those facts distinct in completion summaries.
