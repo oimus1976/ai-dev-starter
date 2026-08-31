@@ -214,15 +214,21 @@ def main() -> int:
             print(f"- {failure}")
         print("NEXT STEPS:")
         print("1. Preserve or commit any intentional local changes before cleanup.")
-        if topic_mode and canonical is not None:
+        if topic_mode:
             print(
-                f"2. Keep the topic worktree unchanged; repair/synchronize the existing "
-                f"{args.branch} worktree."
+                "2. Resolve every task-worktree finding first; do not switch away from "
+                "the topic worktree to bypass the confirmed PR-head check."
             )
-            print(
-                f"3. In that canonical worktree, fast-forward only: "
-                f"git pull --ff-only {args.remote} {args.branch}"
-            )
+            if canonical is None:
+                print(
+                    f"3. Check out {args.branch} in a separate canonical worktree, then "
+                    f"fast-forward it only from {args.remote}/{args.branch}."
+                )
+            else:
+                print(
+                    f"3. Repair/synchronize the existing {args.branch} worktree; "
+                    f"fast-forward only: git pull --ff-only {args.remote} {args.branch}"
+                )
             print(
                 "4. Re-run this verifier from the topic worktree with the full "
                 "--expected-pr-head confirmed from GitHub."
