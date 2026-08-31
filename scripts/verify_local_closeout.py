@@ -11,8 +11,12 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import re
 import subprocess
 import sys
+
+
+FULL_GITHUB_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
 def git(*args: str, cwd: Path, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -37,6 +41,10 @@ def git_dir_for(worktree: Path) -> Path | None:
 
 
 def check_worktree_state(worktree: Path, label: str, failures: list[str]) -> None:
+    if not worktree.is_dir():
+        failures.append(f"{label} worktree path is unavailable")
+        return
+
     status = git(
         "status",
         "--porcelain=v1",
@@ -91,7 +99,10 @@ def canonical_worktree(repo: Path, branch: str) -> Path | None:
     ]
     if len(matches) != 1:
         return None
-    return Path(matches[0]).resolve()
+    candidate = Path(matches[0]).resolve()
+    if not candidate.is_dir():
+        return None
+    return candidate
 
 
 def main() -> int:
@@ -104,13 +115,18 @@ def main() -> int:
     parser.add_argument(
         "--expected-pr-head",
         help=(
-            "Full PR head SHA from an independent GitHub merge read. Required when "
-            "running from a non-canonical topic worktree."
+            "Full 40-character PR head SHA from an independent GitHub merge read. "
+            "Required when running from a non-canonical topic worktree."
         ),
     )
     args = parser.parse_args()
 
     requested = Path(args.repo).resolve()
+    if not requested.is_dir():
+        print("LOCAL CLOSEOUT: FAIL")
+        print("- requested repository/worktree path is unavailable")
+        return 1
+
     probe = git("rev-parse", "--show-toplevel", cwd=requested, check=False)
     if probe.returncode != 0:
         print("LOCAL CLOSEOUT: FAIL")
@@ -142,20 +158,23 @@ def main() -> int:
     topic_mode = canonical is None
 
     if topic_mode:
-        if not args.expected_pr_head:
+        expected_pr_head = (args.expected_pr_head or "").strip()
+        if not expected_pr_head:
             failures.append(
                 "topic worktree closeout requires --expected-pr-head from the independently confirmed merged PR"
             )
-        elif task_head.lower() != args.expected_pr_head.strip().lower():
+        elif not FULL_GITHUB_SHA_RE.fullmatch(expected_pr_head):
+            failures.append("--expected-pr-head must be a full 40-character hexadecimal GitHub commit SHA")
+        elif task_head.lower() != expected_pr_head.lower():
             failures.append(
                 f"task HEAD {task_head[:12]} does not match expected PR head "
-                f"{args.expected_pr_head.strip()[:12]}"
+                f"{expected_pr_head[:12]}"
             )
 
         canonical = canonical_worktree(task_worktree, args.branch)
         if canonical is None:
             failures.append(
-                f"canonical branch {args.branch!r} is not checked out in exactly one worktree"
+                f"canonical branch {args.branch!r} is not checked out in exactly one available worktree"
             )
         else:
             check_worktree_state(canonical, "canonical", failures)
