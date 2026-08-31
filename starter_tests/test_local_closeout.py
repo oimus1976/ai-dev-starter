@@ -38,6 +38,13 @@ class LocalCloseoutTests(unittest.TestCase):
         run("git", "commit", "-m", "initial", cwd=self.repo)
         run("git", "push", "-u", "origin", "main", cwd=self.repo)
 
+    def git_dir(self, repo: Path) -> Path:
+        raw = run("git", "rev-parse", "--git-dir", cwd=repo).stdout.strip()
+        path = Path(raw)
+        if not path.is_absolute():
+            path = repo / path
+        return path.resolve()
+
     def verify(
         self,
         repo: Path | None = None,
@@ -116,6 +123,14 @@ class LocalCloseoutTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("requires --expected-pr-head", result.stdout)
 
+    def test_topic_worktree_rejects_non_full_expected_pr_head(self) -> None:
+        linked, expected = self.add_topic_worktree()
+
+        result = self.verify(linked, expected[:12])
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("full 40-character hexadecimal", result.stdout)
+
     def test_topic_worktree_fails_when_expected_head_moved(self) -> None:
         linked, _ = self.add_topic_worktree()
 
@@ -143,6 +158,21 @@ class LocalCloseoutTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("canonical working tree is not clean", result.stdout)
 
+    def test_topic_worktree_fails_when_canonical_git_operation_remains(self) -> None:
+        linked, expected = self.add_topic_worktree()
+        (self.git_dir(self.repo) / "CHERRY_PICK_HEAD").write_text(
+            run("git", "rev-parse", "HEAD", cwd=self.repo).stdout.strip() + "\n",
+            encoding="utf-8",
+        )
+
+        result = self.verify(linked, expected)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "canonical Git operation still in progress: CHERRY_PICK_HEAD",
+            result.stdout,
+        )
+
     def test_topic_worktree_fails_when_topic_is_dirty(self) -> None:
         linked, expected = self.add_topic_worktree()
         (linked / "untracked.txt").write_text("leftover\n", encoding="utf-8")
@@ -152,6 +182,20 @@ class LocalCloseoutTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("task working tree is not clean", result.stdout)
 
+    def test_topic_worktree_fails_when_topic_git_operation_remains(self) -> None:
+        linked, expected = self.add_topic_worktree()
+        (self.git_dir(linked) / "CHERRY_PICK_HEAD").write_text(
+            expected + "\n", encoding="utf-8"
+        )
+
+        result = self.verify(linked, expected)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "task Git operation still in progress: CHERRY_PICK_HEAD",
+            result.stdout,
+        )
+
     def test_fails_on_topic_branch_without_canonical_worktree(self) -> None:
         run("git", "switch", "-c", "topic", cwd=self.repo)
         expected = run("git", "rev-parse", "HEAD", cwd=self.repo).stdout.strip()
@@ -160,6 +204,34 @@ class LocalCloseoutTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("canonical branch 'main' is not checked out", result.stdout)
+
+    def test_stale_canonical_worktree_registration_fails_without_crash(self) -> None:
+        run("git", "switch", "-c", "topic", cwd=self.repo)
+        expected = run("git", "rev-parse", "HEAD", cwd=self.repo).stdout.strip()
+        canonical = self.temp / "canonical-linked"
+        run("git", "worktree", "add", str(canonical), "main", cwd=self.repo)
+        shutil.rmtree(canonical)
+
+        result = self.verify(expected_pr_head=expected)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("canonical branch 'main' is not checked out", result.stdout)
+        self.assertNotIn("Traceback", result.stdout)
+
+    def test_missing_requested_repo_fails_without_crash(self) -> None:
+        missing = self.temp / "missing-worktree"
+        result = run(
+            sys.executable,
+            str(VERIFY),
+            "--repo",
+            str(missing),
+            cwd=self.temp,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requested repository/worktree path is unavailable", result.stdout)
+        self.assertNotIn("Traceback", result.stdout)
 
     def test_fails_on_dirty_or_untracked_working_tree(self) -> None:
         (self.repo / "untracked.txt").write_text("leftover\n", encoding="utf-8")
@@ -207,8 +279,9 @@ class LocalCloseoutTests(unittest.TestCase):
 
     def test_fails_when_git_operation_marker_remains(self) -> None:
         head = run("git", "rev-parse", "HEAD", cwd=self.repo).stdout.strip()
-        git_dir = self.repo / ".git"
-        (git_dir / "CHERRY_PICK_HEAD").write_text(head + "\n", encoding="utf-8")
+        (self.git_dir(self.repo) / "CHERRY_PICK_HEAD").write_text(
+            head + "\n", encoding="utf-8"
+        )
         result = self.verify()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(
