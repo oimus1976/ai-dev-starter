@@ -2,7 +2,7 @@
 """Verify that a local checkout is safely closed out after a merged PR.
 
 The verifier is non-destructive with respect to branches and working-tree
-content. It performs `git fetch <remote>` to refresh remote-tracking refs, then
+content. It refreshes the canonical remote-tracking branch explicitly, then
 checks whether the active checkout is ready for the next work item.
 """
 
@@ -43,10 +43,12 @@ def main() -> int:
         print("- not a Git worktree/repository")
         return 1
 
-    fetched = git("fetch", args.remote, cwd=repo, check=False)
+    remote_ref = f"refs/remotes/{args.remote}/{args.branch}"
+    fetch_refspec = f"+refs/heads/{args.branch}:{remote_ref}"
+    fetched = git("fetch", args.remote, fetch_refspec, cwd=repo, check=False)
     if fetched.returncode != 0:
         failures.append(
-            f"could not refresh {args.remote}; remote freshness is unverified: {fetched.stdout.strip()}"
+            f"could not refresh {args.remote}/{args.branch}; remote freshness is unverified: {fetched.stdout.strip()}"
         )
 
     branch = git("branch", "--show-current", cwd=repo, check=False).stdout.strip()
@@ -79,7 +81,6 @@ def main() -> int:
             if (git_dir_path / marker).exists():
                 failures.append(f"Git operation still in progress: {marker}")
 
-    remote_ref = f"refs/remotes/{args.remote}/{args.branch}"
     remote_sha = git("rev-parse", "--verify", remote_ref, cwd=repo, check=False)
     if remote_sha.returncode != 0:
         failures.append(f"remote-tracking ref is unavailable: {args.remote}/{args.branch}")
@@ -108,7 +109,7 @@ def main() -> int:
     print(f"head={head_sha}")
     print(f"remote={args.remote}/{args.branch}")
     print("working_tree=clean")
-    print("freshness=fetch-completed")
+    print("freshness=canonical-branch-fetch-completed")
     return 0
 
 
