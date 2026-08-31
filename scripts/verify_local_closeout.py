@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Verify that a local checkout is safely closed out after a merged PR.
 
-The check is intentionally read-only with respect to branches and working-tree
-content. By default it performs `git fetch <remote>` to refresh remote-tracking
-refs, then verifies that the current checkout is ready for the next work item.
+The verifier is non-destructive with respect to branches and working-tree
+content. It performs `git fetch <remote>` to refresh remote-tracking refs, then
+checks whether the active checkout is ready for the next work item.
 """
 
 from __future__ import annotations
@@ -27,16 +27,11 @@ def git(*args: str, cwd: Path, check: bool = True) -> subprocess.CompletedProces
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Verify post-merge local closeout without deleting branches or files."
+        description="Verify post-merge local closeout without reset/stash/delete cleanup."
     )
     parser.add_argument("--repo", default=".", help="Local repository/worktree path.")
     parser.add_argument("--branch", default="main", help="Canonical local branch.")
     parser.add_argument("--remote", default="origin", help="Canonical Git remote.")
-    parser.add_argument(
-        "--no-fetch",
-        action="store_true",
-        help="Skip refreshing remote-tracking refs. Use only when freshness is established separately.",
-    )
     args = parser.parse_args()
 
     repo = Path(args.repo).resolve()
@@ -48,12 +43,11 @@ def main() -> int:
         print("- not a Git worktree/repository")
         return 1
 
-    if not args.no_fetch:
-        fetched = git("fetch", args.remote, cwd=repo, check=False)
-        if fetched.returncode != 0:
-            failures.append(
-                f"could not refresh {args.remote}; remote freshness is unverified: {fetched.stdout.strip()}"
-            )
+    fetched = git("fetch", args.remote, cwd=repo, check=False)
+    if fetched.returncode != 0:
+        failures.append(
+            f"could not refresh {args.remote}; remote freshness is unverified: {fetched.stdout.strip()}"
+        )
 
     branch = git("branch", "--show-current", cwd=repo, check=False).stdout.strip()
     if branch != args.branch:
@@ -102,7 +96,7 @@ def main() -> int:
         for failure in failures:
             print(f"- {failure}")
         print("NEXT STEPS:")
-        print(f"1. Preserve or commit any intentional local changes before cleanup.")
+        print("1. Preserve or commit any intentional local changes before cleanup.")
         print(f"2. Switch to {args.branch}: git switch {args.branch}")
         print(f"3. Fast-forward only: git pull --ff-only {args.remote} {args.branch}")
         print("4. Re-run this verifier. Do not use reset/stash/delete merely to make the gate pass.")
@@ -114,7 +108,7 @@ def main() -> int:
     print(f"head={head_sha}")
     print(f"remote={args.remote}/{args.branch}")
     print("working_tree=clean")
-    print("freshness=" + ("caller-established (--no-fetch)" if args.no_fetch else "fetch-completed"))
+    print("freshness=fetch-completed")
     return 0
 
 
