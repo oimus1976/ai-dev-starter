@@ -51,6 +51,13 @@ class VerifyRepoTests(StarterTestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("template repository must not ship", result.stdout)
 
+    def test_canonical_template_requires_local_closeout_helper(self) -> None:
+        repo = self.make_copy()
+        (repo / "scripts/verify_local_closeout.py").unlink()
+        result = self.run_verify(repo, "oimus1976/ai-dev-starter")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing required file: scripts/verify_local_closeout.py", result.stdout)
+
     def test_policy_check_uses_exact_pr_head_without_persisted_credentials(self) -> None:
         text = (ROOT / POLICY_CHECK).read_text(encoding="utf-8")
         self.assertIn("ref: ${{ github.event.pull_request.head.sha || github.sha }}", text)
@@ -58,6 +65,7 @@ class VerifyRepoTests(StarterTestCase):
         self.assertNotIn("persist-credentials: true", text)
         self.assertIn("python -m unittest discover -s starter_tests -v", text)
         self.assertNotIn("python -m unittest discover -s tests -v", text)
+        self.assertIn("scripts/verify_local_closeout.py", text)
 
     def test_copied_template_fails_until_initialized(self) -> None:
         repo = self.make_copy()

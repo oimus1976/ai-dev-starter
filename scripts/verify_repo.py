@@ -28,7 +28,9 @@ REQUIRED = [
     ".github/pull_request_template.md",
     ".github/workflows/policy-check.yml",
     "scripts/bootstrap.py",
+    "scripts/verify_local_closeout.py",
     "starter_tests/test_verify_repo.py",
+    "starter_tests/test_local_closeout.py",
 ]
 
 RISK_ORDER = {"ROUTINE": 1, "ELEVATED": 2, "HIGH_IMPACT": 3}

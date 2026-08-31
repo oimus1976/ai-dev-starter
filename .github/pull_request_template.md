@@ -62,3 +62,7 @@ Owner should be able to explain:
 
 - [ ] Ready has not been inferred from implementation/test/review completion.
 - [ ] Merge has not been inferred from Ready or another approval.
+
+## Post-merge local closeout
+
+This is intentionally **not** a pre-merge acceptance checkbox. After the human merge, if a local checkout/worktree was used for this PR, independently confirm the merge and run `python scripts/verify_local_closeout.py` before reporting the local task closed or starting the next tracked implementation in that checkout.

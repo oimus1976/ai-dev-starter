@@ -42,19 +42,31 @@ GitHub enforcement observation on the starter repository:
 
 Therefore the house rule against normal direct `main` writes is currently **DECLARED policy**, not GitHub platform enforcement. Do not describe it as `ENFORCED` or `VERIFIED` unless the platform state changes and is re-observed.
 
+## First real project adoption: wacaf-room-watcher
+
+On 2026-08-31, `oimus1976/wacaf-room-watcher` became the first real project to adopt and evolve from the Starter baseline.
+
+Early adoption produced concrete corrections rather than merely confirming the template:
+
+- the initial adoption exposed a namespace collision between canonical Starter regressions and generated-project `tests/`, leading Starter regressions to move into `starter_tests/` while project `tests/` became project-owned;
+- subsequent tracked Phase 3/4 changes showed that Ready/merge human-final gates worked, but also exposed a lifecycle gap: GitHub merge completion did not establish that the developer's local checkout had returned to clean, synchronized canonical `main`;
+- that gap motivated the post-merge local closeout gate and `scripts/verify_local_closeout.py` in Issue #8.
+
+This evidence supports keeping merge authority and local checkout postconditions as separate facts. It also reinforces the rule that baseline changes should come from observed friction in real work, not from speculative ceremony.
+
 ## Known limits of the baseline
 
 1. The evidence comes from a small number of projects by the same owner in the same time period.
 2. These projects are unusually security/evidence conscious; copying their strongest controls into every small project would create ceremony without proportional benefit.
 3. GitHub branch protection/ruleset enforcement is not active for the starter under the observed current repository/account state; human/process discipline still carries the direct-main-write boundary.
-4. Template generation has now been smoke-tested, but v0.5 has not yet been used to start and evolve a fresh real project through its first meaningful tracked change. Adoption friction and missing defaults remain empirical questions.
+4. The first real project is now active and has already generated useful corrections, but the baseline has not yet accumulated evidence across multiple independently shaped new projects. Long-term adoption friction and which rules should be demoted remain empirical questions.
 5. A clean AI review does not prove the baseline itself is optimal; new evidence should trigger revision.
 
 ## Promotion criterion
 
 Do not call this an established standard yet.
 
-Promote beyond Draft/Baseline status only after at least one fresh project is created from it and post-adoption review confirms:
+Promote beyond Draft/Baseline status only after real-project adoption evidence confirms across more than one project shape that:
 
 - the owner can maintain required C1/C2 comprehension;
 - the workflow does not create repeated low-value ceremony;
