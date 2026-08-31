@@ -47,8 +47,11 @@ def main() -> int:
     fetch_refspec = f"+refs/heads/{args.branch}:{remote_ref}"
     fetched = git("fetch", args.remote, fetch_refspec, cwd=repo, check=False)
     if fetched.returncode != 0:
+        # Do not echo fetch output here: unusual remote URLs/errors can contain
+        # sensitive connection material. The operator can run Git directly when
+        # troubleshooting the remote.
         failures.append(
-            f"could not refresh {args.remote}/{args.branch}; remote freshness is unverified: {fetched.stdout.strip()}"
+            f"could not refresh {args.remote}/{args.branch}; remote freshness is unverified"
         )
 
     branch = git("branch", "--show-current", cwd=repo, check=False).stdout.strip()
@@ -59,7 +62,7 @@ def main() -> int:
 
     status = git("status", "--porcelain=v1", "--untracked-files=all", cwd=repo, check=False)
     if status.returncode != 0:
-        failures.append(f"could not read working-tree status: {status.stdout.strip()}")
+        failures.append("could not read working-tree status")
     elif status.stdout.strip():
         failures.append("working tree is not clean")
 
