@@ -68,15 +68,27 @@ Ready and merge are human-final. Do not perform or infer them from another appro
 
 Human merge completion and local closeout are separate facts.
 
-When a tracked PR used a local checkout/worktree, do not report the work item as locally closed out and do not start the next tracked implementation in that checkout until all of the following are established:
+When a tracked PR used a local checkout/worktree, do not report the work item as locally closed out until GitHub independently confirms the merge and the applicable local closeout path passes.
 
-1. GitHub independently confirms the PR was merged;
-2. remote-tracking refs are refreshed;
-3. the checkout is on canonical `main` unless the project explicitly names another canonical branch;
-4. the working tree, including untracked files, is clean;
-5. no merge/rebase/cherry-pick/revert/bisect operation is in progress;
-6. local `HEAD` exactly matches fresh `origin/main` (or the project-specific canonical remote/branch).
+### Same/canonical checkout
 
-Run `python scripts/verify_local_closeout.py` for the local-state checks. The verifier may `git fetch` to establish freshness, but it must not reset, stash, discard files, delete branches/worktrees, or perform other destructive cleanup merely to make the gate pass.
+If the PR checkout itself is the canonical checkout used for the next task, run:
 
-If the gate fails, preserve intentional local work first and report the unresolved local state instead of claiming closeout. Topic-branch/worktree deletion is a separate cleanup decision and is not required merely to prove that the canonical checkout is ready for the next task.
+`python scripts/verify_local_closeout.py`
+
+The verifier requires fresh canonical remote state, canonical `main` (unless project-specific override), a clean tracked+untracked worktree, no merge/rebase/cherry-pick/revert/bisect in progress, and exact local/canonical-remote HEAD match.
+
+### Separate linked topic worktree
+
+If the PR used a linked topic worktree while canonical `main` remains checked out in another worktree:
+
+1. independently read the merged PR's exact head SHA from GitHub;
+2. in the topic worktree run `python scripts/verify_local_closeout.py --expected-pr-head <FULL_PR_HEAD_SHA>`;
+3. require the topic worktree to be clean, have no Git operation in progress, and still be at that confirmed PR head;
+4. require the separately checked-out canonical worktree to be clean and exactly synchronized to fresh `origin/main`.
+
+A successful topic-worktree closeout means the task worktree has no unaccounted local residue and the canonical worktree is the next-work entry point. It does **not** mean the topic worktree itself became `main`, and it does not require deleting that topic branch/worktree.
+
+The verifier may `git fetch` to establish freshness, but it must not reset, stash, discard files, delete branches/worktrees, or perform other destructive cleanup merely to make the gate pass.
+
+If the gate fails, preserve intentional local work first and report the unresolved local state instead of claiming closeout. Cleanup/retirement of topic branches or worktrees remains a separate decision.
