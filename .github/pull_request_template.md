@@ -65,4 +65,7 @@ Owner should be able to explain:
 
 ## Post-merge local closeout
 
-This is intentionally **not** a pre-merge acceptance checkbox. After the human merge, if a local checkout/worktree was used for this PR, independently confirm the merge and run `python scripts/verify_local_closeout.py` before reporting the local task closed or starting the next tracked implementation in that checkout.
+This is intentionally **not** a pre-merge acceptance checkbox. After the human merge, independently confirm the merged PR and close out the local state before reporting the task locally closed.
+
+- If the PR checkout is the canonical checkout: run `python scripts/verify_local_closeout.py`.
+- If the PR used a linked topic worktree while canonical `main` is checked out elsewhere: read the merged PR's full head SHA from GitHub and run `python scripts/verify_local_closeout.py --expected-pr-head <FULL_PR_HEAD_SHA>` from the topic worktree. A pass confirms the topic worktree has no unaccounted local residue and the separate canonical worktree is clean/synchronized; the topic worktree itself need not become `main` or be deleted.
