@@ -53,7 +53,7 @@ class LocalCloseoutTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn("LOCAL CLOSEOUT: PASS", result.stdout)
         self.assertIn("working_tree=clean", result.stdout)
-        self.assertIn("freshness=fetch-completed", result.stdout)
+        self.assertIn("freshness=canonical-branch-fetch-completed", result.stdout)
 
     def test_fails_on_topic_branch(self) -> None:
         run("git", "switch", "-c", "topic", cwd=self.repo)
@@ -83,6 +83,12 @@ class LocalCloseoutTests(unittest.TestCase):
 
     def test_fails_when_fetch_cannot_establish_freshness(self) -> None:
         run("git", "remote", "set-url", "origin", str(self.temp / "missing.git"), cwd=self.repo)
+        result = self.verify()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("remote freshness is unverified", result.stdout)
+
+    def test_fails_when_canonical_remote_branch_no_longer_exists(self) -> None:
+        run("git", "--git-dir", str(self.remote), "update-ref", "-d", "refs/heads/main", cwd=self.temp)
         result = self.verify()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("remote freshness is unverified", result.stdout)
