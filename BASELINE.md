@@ -352,22 +352,31 @@ Changes to this baseline itself are governed like architecture changes:
 
 ## 22. Post-merge local closeout is a separate gate
 
-Human merge completion establishes the canonical GitHub effect. It does not establish the state of a developer's local checkout.
+Human merge completion establishes the canonical GitHub effect. It does not establish the state of developer worktrees.
 
-When a tracked PR used a local checkout or worktree, treat **post-merge local closeout** as a separate gate before that checkout is considered ready for the next tracked implementation.
+When a tracked PR used a local checkout/worktree, treat **post-merge local closeout** as a separate gate. Keep two facts distinct:
 
-Minimum closeout postconditions:
+1. whether the worktree used for the PR has any unaccounted local residue;
+2. whether the canonical checkout that will seed the next tracked task is clean and synchronized.
+
+Common postconditions:
 
 1. GitHub independently confirms that the intended PR was merged;
-2. the canonical remote is freshly fetched;
-3. the active checkout is on canonical `main`, unless the project explicitly defines another canonical branch;
-4. the working tree, including untracked files, is clean;
-5. no merge, rebase, cherry-pick, revert, or bisect operation is in progress;
-6. local `HEAD` exactly matches the freshly observed canonical remote branch (`origin/main` by default).
+2. the canonical remote branch is freshly fetched;
+3. the worktree used for the PR is clean, including untracked files;
+4. no merge, rebase, cherry-pick, revert, or bisect operation is in progress in the worktree being closed out.
 
-The local gate proves only that the canonical checkout is synchronized and clean enough to start the next work item. It does **not** require deleting topic branches or extra worktrees merely because a PR merged.
+If the PR worktree is itself the canonical checkout, it must also be on canonical `main` (unless the project defines another canonical branch) and its `HEAD` must exactly match the freshly observed canonical remote branch (`origin/main` by default).
 
-Use `scripts/verify_local_closeout.py` where available. It may perform `git fetch` to establish freshness. It must not reset, stash, discard files, delete branches/worktrees, or perform other destructive cleanup merely to make the gate pass.
+If the PR used a separate linked topic worktree while canonical `main` remains checked out elsewhere, do **not** require the topic worktree to become `main`. Instead:
+
+1. independently read the merged PR's exact head SHA from GitHub;
+2. require the topic worktree `HEAD` to still equal that confirmed PR head, so additional local commits are not silently ignored;
+3. require the separately checked-out canonical worktree to be clean, have no Git operation in progress, remain on canonical `main`, and exactly match fresh `origin/main`.
+
+Use `scripts/verify_local_closeout.py` where available. From a linked topic worktree, pass the confirmed head as `--expected-pr-head <FULL_PR_HEAD_SHA>`. A successful linked-worktree closeout means the task worktree has no unaccounted local residue **and** the canonical worktree is ready as the next-work entry point. It does not mean the topic worktree itself is ready for the next task.
+
+Topic branch/worktree deletion is not required merely because a PR merged. The verifier may perform `git fetch` to establish freshness, but it must not reset, stash, discard files, delete branches/worktrees, or perform other destructive cleanup merely to make the gate pass.
 
 If local closeout fails, preserve intentional local work first. Report the unresolved local state and remediate it explicitly; do not convert a failed closeout check into permission for destructive cleanup.
 
