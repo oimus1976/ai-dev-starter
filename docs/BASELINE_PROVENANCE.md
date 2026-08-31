@@ -50,9 +50,11 @@ Early adoption produced concrete corrections rather than merely confirming the t
 
 - the initial adoption exposed a namespace collision between canonical Starter regressions and generated-project `tests/`, leading Starter regressions to move into `starter_tests/` while project `tests/` became project-owned;
 - subsequent tracked Phase 3/4 changes showed that Ready/merge human-final gates worked, but also exposed a lifecycle gap: GitHub merge completion did not establish that the developer's local checkout had returned to clean, synchronized canonical `main`;
-- that gap motivated the post-merge local closeout gate and `scripts/verify_local_closeout.py` in Issue #8.
+- that gap motivated the post-merge local closeout gate and `scripts/verify_local_closeout.py` in Issue #8;
+- the first horizontal rollout then exposed a second-order worktree gap: the original linked-worktree regression moved the primary checkout off `main`, so it missed the common arrangement where the primary worktree keeps `main` and a separate linked worktree carries the PR topic branch;
+- Issue #10 therefore split task-worktree closeout from canonical-worktree readiness: a linked topic worktree can close out while remaining on its topic branch when its exact GitHub-confirmed PR head is preserved and a separate canonical worktree is clean and synchronized.
 
-This evidence supports keeping merge authority and local checkout postconditions as separate facts. It also reinforces the rule that baseline changes should come from observed friction in real work, not from speculative ceremony.
+This evidence supports keeping merge authority, task-worktree residue, and canonical next-work readiness as separate facts. It also reinforces the rule that baseline changes should come from observed friction in real work, not from speculative ceremony.
 
 ## Known limits of the baseline
 
