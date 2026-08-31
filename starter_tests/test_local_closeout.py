@@ -38,13 +38,14 @@ class LocalCloseoutTests(unittest.TestCase):
         run("git", "commit", "-m", "initial", cwd=self.repo)
         run("git", "push", "-u", "origin", "main", cwd=self.repo)
 
-    def verify(self) -> subprocess.CompletedProcess[str]:
+    def verify(self, repo: Path | None = None) -> subprocess.CompletedProcess[str]:
+        target = repo or self.repo
         return run(
             sys.executable,
             str(VERIFY),
             "--repo",
-            str(self.repo),
-            cwd=self.repo,
+            str(target),
+            cwd=target,
             check=False,
         )
 
@@ -54,6 +55,17 @@ class LocalCloseoutTests(unittest.TestCase):
         self.assertIn("LOCAL CLOSEOUT: PASS", result.stdout)
         self.assertIn("working_tree=clean", result.stdout)
         self.assertIn("freshness=canonical-branch-fetch-completed", result.stdout)
+
+    def test_passes_from_linked_worktree_on_canonical_main(self) -> None:
+        run("git", "switch", "-c", "parking", cwd=self.repo)
+        linked = self.temp / "linked-worktree"
+        run("git", "worktree", "add", str(linked), "main", cwd=self.repo)
+
+        result = self.verify(linked)
+
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("LOCAL CLOSEOUT: PASS", result.stdout)
+        self.assertIn("branch=main", result.stdout)
 
     def test_fails_on_topic_branch(self) -> None:
         run("git", "switch", "-c", "topic", cwd=self.repo)
@@ -91,10 +103,12 @@ class LocalCloseoutTests(unittest.TestCase):
         self.assertIn("does not match origin/main", result.stdout)
 
     def test_fails_when_fetch_cannot_establish_freshness(self) -> None:
-        run("git", "remote", "set-url", "origin", str(self.temp / "missing.git"), cwd=self.repo)
+        missing_remote = self.temp / "missing.git"
+        run("git", "remote", "set-url", "origin", str(missing_remote), cwd=self.repo)
         result = self.verify()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("remote freshness is unverified", result.stdout)
+        self.assertNotIn(str(missing_remote), result.stdout)
 
     def test_fails_when_canonical_remote_branch_no_longer_exists(self) -> None:
         run("git", "--git-dir", str(self.remote), "update-ref", "-d", "refs/heads/main", cwd=self.temp)
