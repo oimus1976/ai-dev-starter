@@ -204,6 +204,19 @@ class LocalCloseoutTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("canonical branch 'main' is not checked out", result.stdout)
+        self.assertIn("separate canonical worktree", result.stdout)
+        self.assertNotIn("git switch main", result.stdout)
+
+    def test_topic_head_mismatch_cannot_be_guided_into_canonical_bypass(self) -> None:
+        run("git", "switch", "-c", "topic", cwd=self.repo)
+
+        result = self.verify(expected_pr_head="0" * 40)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("does not match expected PR head", result.stdout)
+        self.assertIn("do not switch away", result.stdout)
+        self.assertIn("separate canonical worktree", result.stdout)
+        self.assertNotIn("git switch main", result.stdout)
 
     def test_stale_canonical_worktree_registration_fails_without_crash(self) -> None:
         run("git", "switch", "-c", "topic", cwd=self.repo)
