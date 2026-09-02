@@ -14,6 +14,7 @@ from typing import Callable, Iterator
 from closeout_state import (
     FULL_SHA_RE,
     WorktreeInfo,
+    cleanup_worktree_failures,
     delete_ref_cas,
     git,
     is_ancestor,
@@ -78,13 +79,16 @@ GitHubReader = Callable[[int, str], PREvidence]
 
 def read_github_pr(pr: int, repository: str) -> PREvidence:
     fields = "number,state,mergedAt,baseRefName,headRefName,headRefOid,isCrossRepository"
-    result = subprocess.run(
-        ["gh", "pr", "view", str(pr), "-R", repository, "--json", fields],
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            ["gh", "pr", "view", str(pr), "-R", repository, "--json", fields],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError as exc:
+        raise RuntimeError("GitHub PR evidence could not be read with authenticated gh") from exc
     if result.returncode != 0:
         raise RuntimeError("GitHub PR evidence could not be read with authenticated gh")
     try:
@@ -173,7 +177,7 @@ def build_plan(
         if not target.path.is_dir() or target.prunable:
             failures.append("topic worktree registration is stale or unavailable")
         else:
-            failures.extend(worktree_failures(target.path, "task"))
+            failures.extend(cleanup_worktree_failures(target.path, "task"))
             target_head = rev_parse(target.path, "HEAD")
             if target_head is None or target_head.lower() != evidence.head_sha.lower():
                 failures.append("task HEAD does not match GitHub PR head")
@@ -321,6 +325,8 @@ def _remote_delete_with_lease(repo: Path, plan: CleanupPlan) -> bool:
     current, error = remote_branch_sha(repo, plan.remote, plan.topic_branch)
     if error:
         return False
+    if plan.remote_topic_sha is None:
+        return current is None
     if current is None:
         return True
     if current.lower() != plan.expected_head:
@@ -368,32 +374,32 @@ def execute_plan(
     remote_tracking_ref = f"refs/remotes/{plan.remote}/{plan.topic_branch}"
 
     if plan.mode == "linked" and plan.target_worktree is not None:
-        pre = worktree_failures(plan.target_worktree, "task")
+        pre = cleanup_worktree_failures(plan.target_worktree, "task")
         if pre or rev_parse(plan.target_worktree, "HEAD") != plan.expected_head:
             return _execution_failure(
                 pre or ["task HEAD changed before worktree removal"], effects_started
             )
+        effects_started = True
         result = git("worktree", "remove", str(plan.target_worktree), cwd=repo, check=False)
         if result.returncode != 0:
             return _execution_failure(
                 ["normal topic worktree removal failed; no force cleanup was attempted"],
                 effects_started,
             )
-        effects_started = True
 
     elif plan.mode == "single" and plan.target_worktree is not None:
-        pre = worktree_failures(plan.target_worktree, "task")
+        pre = cleanup_worktree_failures(plan.target_worktree, "task")
         if pre or rev_parse(plan.target_worktree, "HEAD") != plan.expected_head:
             return _execution_failure(
                 pre or ["task HEAD changed before canonical switch"], effects_started
             )
+        effects_started = True
         switched = git("switch", plan.branch, cwd=plan.target_worktree, check=False)
         if switched.returncode != 0:
             return _execution_failure(
                 [f"could not switch clean task worktree to canonical branch {plan.branch!r}"],
                 effects_started,
             )
-        effects_started = True
         current_main = rev_parse(plan.target_worktree, "HEAD")
         if current_main != plan.canonical_remote_sha:
             merged = git(
@@ -419,13 +425,13 @@ def execute_plan(
         effects_started = True
 
     if plan.delete_remote:
+        if plan.remote_topic_sha is not None:
+            effects_started = True
         if not _remote_delete_with_lease(repo, plan):
             return _execution_failure(
                 ["remote topic branch deletion failed or lost its expected-SHA lease"],
                 effects_started,
             )
-        if plan.remote_topic_sha is not None:
-            effects_started = True
 
     current_remote_topic, remote_error = remote_branch_sha(repo, plan.remote, plan.topic_branch)
     if remote_error:
