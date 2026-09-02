@@ -64,4 +64,4 @@ jobs:
       - name: Run local closeout verifier regressions
         run: python -m unittest discover -s starter_tests -p "test_local_closeout.py" -v
       - name: Run post-merge cleanup regressions
-        run: python -m unittest discover -s starter_tests -p "test_post_merge_cleanup.py" -v
+        run: python -m unittest discover -s starter_tests -p "test_post_merge_cleanup*.py" -v
