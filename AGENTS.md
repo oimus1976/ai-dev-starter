@@ -105,8 +105,10 @@ Only an eligible plan may proceed to:
 
 Local execution is limited to the exact merged PR residue. It may normally remove an eligible linked topic worktree, safely return a single clean topic checkout to canonical `main`, and conditionally remove the exact topic/stale-tracking refs. It must not use reset, stash, content discard, `git clean`, forced worktree removal, `git branch -D`, unconditional ref deletion, or broad prune to make cleanup succeed.
 
+Before a worktree-changing cleanup effect, v1 also fails closed on local state that ordinary `git status` can hide or classify as disposable: ignored files/directories, `assume-unchanged` or `skip-worktree` index flags, and submodule gitlinks. Resolve or deliberately preserve those states outside the cleanup helper rather than teaching the helper to guess which local data is expendable.
+
 Remote topic deletion is a stronger optional effect and is off by default. Use `--delete-remote` only when that remote write is explicitly part of the closeout procedure; the tool must re-check the remote ref and use an exact expected-SHA lease.
 
-`--execute` re-reads authority and mutable Git state rather than trusting a prior plan. A pre-effect failure is `SAFE CLEANUP: BLOCKED` and performs no cleanup. A failure after an authorized effect has already completed is `SAFE CLEANUP: INCOMPLETE`; report the partial state and stop rather than attempting force recovery.
+`--execute` re-reads authority and mutable Git state rather than trusting a prior plan. A pre-effect failure is `SAFE CLEANUP: BLOCKED` and performs no cleanup. A failure after an authorized effect has already completed or an effect command has begun is `SAFE CLEANUP: INCOMPLETE`; report the partial/ambiguous state and stop rather than attempting force recovery.
 
 If either verifier or cleanup blocks, preserve intentional local work and report the unresolved state. Canonical branch/worktree and unrelated worktrees/refs are never cleanup targets.
