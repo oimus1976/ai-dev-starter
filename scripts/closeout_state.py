@@ -17,6 +17,7 @@ GIT_OPERATION_MARKERS = (
     "BISECT_LOG",
     "rebase-apply",
     "rebase-merge",
+    "sequencer",
 )
 
 
@@ -85,6 +86,62 @@ def worktree_failures(worktree: Path, label: str) -> list[str]:
     for marker in GIT_OPERATION_MARKERS:
         if (git_dir / marker).exists():
             failures.append(f"{label} Git operation still in progress: {marker}")
+    return failures
+
+
+def cleanup_worktree_failures(worktree: Path, label: str) -> list[str]:
+    """Return stricter failures required before cleanup may mutate a worktree.
+
+    Ordinary Git cleanliness intentionally ignores ignored files and can also hide
+    content behind assume-unchanged/skip-worktree index flags. Both states are
+    acceptable for a non-destructive verifier but unsafe before removing a
+    worktree or switching it as part of cleanup.
+    """
+
+    failures = worktree_failures(worktree, label)
+    if not worktree.is_dir():
+        return failures
+
+    ignored = git(
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all",
+        "--ignored=matching",
+        cwd=worktree,
+        check=False,
+    )
+    if ignored.returncode != 0:
+        failures.append(f"could not inspect ignored files in {label} worktree")
+    elif any(record.startswith("!! ") for record in ignored.stdout.split("\0") if record):
+        failures.append(
+            f"{label} worktree contains ignored files/directories that cleanup could overwrite or delete"
+        )
+
+    index_flags = git("ls-files", "-v", "-z", cwd=worktree, check=False)
+    if index_flags.returncode != 0:
+        failures.append(f"could not inspect {label} index visibility flags")
+    else:
+        hidden_flags = []
+        for record in index_flags.stdout.split("\0"):
+            if not record:
+                continue
+            flag = record[0]
+            if flag == "S" or flag.islower():
+                hidden_flags.append(flag)
+        if hidden_flags:
+            failures.append(
+                f"{label} worktree uses skip-worktree/assume-unchanged index flags; cleanup cannot prove file contents safe"
+            )
+
+    staged = git("ls-files", "--stage", "-z", cwd=worktree, check=False)
+    if staged.returncode != 0:
+        failures.append(f"could not inspect {label} submodule entries")
+    elif any(record.startswith("160000 ") for record in staged.stdout.split("\0") if record):
+        failures.append(
+            f"{label} worktree contains submodule gitlinks; destructive cleanup is unsupported in v1"
+        )
+
     return failures
 
 
