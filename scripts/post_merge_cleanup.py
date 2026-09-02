@@ -9,12 +9,11 @@ import json
 from pathlib import Path
 import subprocess
 import sys
-from typing import Callable
+from typing import Callable, Iterator
 
 from closeout_state import (
     FULL_SHA_RE,
     WorktreeInfo,
-    current_branch,
     delete_ref_cas,
     git,
     is_ancestor,
@@ -60,6 +59,18 @@ class CleanupPlan:
     delete_remote: bool
     baseline_refs: tuple[tuple[str, str], ...]
     baseline_worktrees: tuple[tuple[str, str | None, str | None], ...]
+
+
+@dataclass(frozen=True)
+class ExecutionResult:
+    ok: bool
+    failures: tuple[str, ...]
+    effects_started: bool
+
+    def __iter__(self) -> Iterator[object]:
+        """Keep simple two-value unpacking convenient for tests/callers."""
+        yield self.ok
+        yield self.failures
 
 
 GitHubReader = Callable[[int, str], PREvidence]
@@ -321,147 +332,178 @@ def _remote_delete_with_lease(repo: Path, plan: CleanupPlan) -> bool:
     return result.returncode == 0
 
 
+def _execution_failure(
+    failures: list[str] | tuple[str, ...], effects_started: bool
+) -> ExecutionResult:
+    return ExecutionResult(False, tuple(failures), effects_started)
+
+
 def execute_plan(
     plan: CleanupPlan,
     any_repo: Path,
     github_reader: GitHubReader = read_github_pr,
-) -> tuple[bool, list[str]]:
+) -> ExecutionResult:
     effects_started = False
     failures: list[str] = []
     repo, error = resolve_worktree(any_repo)
     if error or repo is None:
-        return False, [error or "repository/worktree could not be resolved"]
-
-    try:
-        fresh, reasons = build_plan(
-            repo,
-            plan.pr,
-            plan.branch,
-            plan.remote,
-            plan.repository,
-            plan.delete_remote,
-            github_reader,
+        return _execution_failure(
+            [error or "repository/worktree could not be resolved"], effects_started
         )
-        if reasons or fresh is None:
-            return False, reasons or ["cleanup revalidation failed"]
-        plan = fresh
 
-        topic_ref = f"refs/heads/{plan.topic_branch}"
-        remote_tracking_ref = f"refs/remotes/{plan.remote}/{plan.topic_branch}"
+    fresh, reasons = build_plan(
+        repo,
+        plan.pr,
+        plan.branch,
+        plan.remote,
+        plan.repository,
+        plan.delete_remote,
+        github_reader,
+    )
+    if reasons or fresh is None:
+        return _execution_failure(reasons or ["cleanup revalidation failed"], effects_started)
+    plan = fresh
 
-        if plan.mode == "linked" and plan.target_worktree is not None:
-            pre = worktree_failures(plan.target_worktree, "task")
-            if pre or rev_parse(plan.target_worktree, "HEAD") != plan.expected_head:
-                return False, pre or ["task HEAD changed before worktree removal"]
-            result = git("worktree", "remove", str(plan.target_worktree), cwd=repo, check=False)
-            if result.returncode != 0:
-                return False, ["normal topic worktree removal failed; no force cleanup was attempted"]
+    topic_ref = f"refs/heads/{plan.topic_branch}"
+    remote_tracking_ref = f"refs/remotes/{plan.remote}/{plan.topic_branch}"
+
+    if plan.mode == "linked" and plan.target_worktree is not None:
+        pre = worktree_failures(plan.target_worktree, "task")
+        if pre or rev_parse(plan.target_worktree, "HEAD") != plan.expected_head:
+            return _execution_failure(
+                pre or ["task HEAD changed before worktree removal"], effects_started
+            )
+        result = git("worktree", "remove", str(plan.target_worktree), cwd=repo, check=False)
+        if result.returncode != 0:
+            return _execution_failure(
+                ["normal topic worktree removal failed; no force cleanup was attempted"],
+                effects_started,
+            )
+        effects_started = True
+
+    elif plan.mode == "single" and plan.target_worktree is not None:
+        pre = worktree_failures(plan.target_worktree, "task")
+        if pre or rev_parse(plan.target_worktree, "HEAD") != plan.expected_head:
+            return _execution_failure(
+                pre or ["task HEAD changed before canonical switch"], effects_started
+            )
+        switched = git("switch", plan.branch, cwd=plan.target_worktree, check=False)
+        if switched.returncode != 0:
+            return _execution_failure(
+                [f"could not switch clean task worktree to canonical branch {plan.branch!r}"],
+                effects_started,
+            )
+        effects_started = True
+        current_main = rev_parse(plan.target_worktree, "HEAD")
+        if current_main != plan.canonical_remote_sha:
+            merged = git(
+                "merge",
+                "--ff-only",
+                f"refs/remotes/{plan.remote}/{plan.branch}",
+                cwd=plan.target_worktree,
+                check=False,
+            )
+            if merged.returncode != 0:
+                return _execution_failure(["canonical fast-forward failed"], effects_started)
+
+    if plan.local_topic_present:
+        current = rev_parse(repo, topic_ref)
+        if current != plan.expected_head:
+            return _execution_failure(
+                ["local topic ref changed before conditional deletion"], effects_started
+            )
+        if not delete_ref_cas(repo, topic_ref, plan.expected_head):
+            return _execution_failure(
+                ["conditional local topic ref deletion failed"], effects_started
+            )
+        effects_started = True
+
+    if plan.delete_remote:
+        if not _remote_delete_with_lease(repo, plan):
+            return _execution_failure(
+                ["remote topic branch deletion failed or lost its expected-SHA lease"],
+                effects_started,
+            )
+        if plan.remote_topic_sha is not None:
             effects_started = True
 
-        elif plan.mode == "single" and plan.target_worktree is not None:
-            pre = worktree_failures(plan.target_worktree, "task")
-            if pre or rev_parse(plan.target_worktree, "HEAD") != plan.expected_head:
-                return False, pre or ["task HEAD changed before canonical switch"]
-            switched = git("switch", plan.branch, cwd=plan.target_worktree, check=False)
-            if switched.returncode != 0:
-                return False, [f"could not switch clean task worktree to canonical branch {plan.branch!r}"]
-            effects_started = True
-            current_main = rev_parse(plan.target_worktree, "HEAD")
-            if current_main != plan.canonical_remote_sha:
-                merged = git(
-                    "merge",
-                    "--ff-only",
-                    f"refs/remotes/{plan.remote}/{plan.branch}",
-                    cwd=plan.target_worktree,
-                    check=False,
+    current_remote_topic, remote_error = remote_branch_sha(repo, plan.remote, plan.topic_branch)
+    if remote_error:
+        return _execution_failure([remote_error], effects_started)
+    if current_remote_topic is None:
+        tracking = rev_parse(repo, remote_tracking_ref)
+        if tracking is not None:
+            if tracking != plan.expected_head:
+                return _execution_failure(
+                    ["target remote-tracking ref changed before conditional deletion"],
+                    effects_started,
                 )
-                if merged.returncode != 0:
-                    return False, ["canonical fast-forward failed"]
-
-        if plan.local_topic_present:
-            current = rev_parse(repo, topic_ref)
-            if current != plan.expected_head:
-                return False, ["local topic ref changed before conditional deletion"]
-            if not delete_ref_cas(repo, topic_ref, plan.expected_head):
-                return False, ["conditional local topic ref deletion failed"]
+            if not delete_ref_cas(repo, remote_tracking_ref, plan.expected_head):
+                return _execution_failure(
+                    ["conditional target remote-tracking ref deletion failed"],
+                    effects_started,
+                )
             effects_started = True
 
-        if plan.delete_remote:
-            if not _remote_delete_with_lease(repo, plan):
-                return False, ["remote topic branch deletion failed or lost its expected-SHA lease"]
-            if plan.remote_topic_sha is not None:
-                effects_started = True
+    remote_main, freshness_error = refresh_remote_branch(repo, plan.remote, plan.branch)
+    if freshness_error or remote_main is None:
+        return _execution_failure(
+            [freshness_error or "canonical freshness could not be re-established"],
+            effects_started,
+        )
 
-        current_remote_topic, remote_error = remote_branch_sha(repo, plan.remote, plan.topic_branch)
+    canonical_matches = worktrees_for_branch(repo, plan.branch)
+    if len(canonical_matches) != 1 or not canonical_matches[0].path.is_dir():
+        failures.append("canonical branch is not checked out in exactly one available worktree")
+    else:
+        canonical_path = canonical_matches[0].path
+        failures.extend(worktree_failures(canonical_path, "canonical"))
+        if rev_parse(canonical_path, "HEAD") != remote_main:
+            failures.append("canonical HEAD does not match freshly fetched canonical remote HEAD")
+
+    if worktrees_for_branch(repo, plan.topic_branch):
+        failures.append("target topic worktree still exists")
+    if rev_parse(repo, topic_ref) is not None:
+        failures.append("target local topic branch still exists")
+    if plan.delete_remote:
+        remote_after, remote_error = remote_branch_sha(repo, plan.remote, plan.topic_branch)
         if remote_error:
-            return False, [remote_error]
-        if current_remote_topic is None:
-            tracking = rev_parse(repo, remote_tracking_ref)
-            if tracking is not None:
-                if tracking != plan.expected_head:
-                    return False, ["target remote-tracking ref changed before conditional deletion"]
-                if not delete_ref_cas(repo, remote_tracking_ref, plan.expected_head):
-                    return False, ["conditional target remote-tracking ref deletion failed"]
-                effects_started = True
+            failures.append(remote_error)
+        elif remote_after is not None:
+            failures.append("requested remote topic branch still exists")
+    remote_after, _ = remote_branch_sha(repo, plan.remote, plan.topic_branch)
+    if remote_after is None and rev_parse(repo, remote_tracking_ref) is not None:
+        failures.append("target stale remote-tracking ref still exists")
 
-        remote_main, freshness_error = refresh_remote_branch(repo, plan.remote, plan.branch)
-        if freshness_error or remote_main is None:
-            return False, [freshness_error or "canonical freshness could not be re-established"]
+    baseline_refs = dict(plan.baseline_refs)
+    post_refs = snapshot_refs(repo)
+    allowed_refs = {
+        topic_ref,
+        remote_tracking_ref,
+        f"refs/heads/{plan.branch}",
+        f"refs/remotes/{plan.remote}/{plan.branch}",
+    }
+    for ref in sorted((set(baseline_refs) | set(post_refs)) - allowed_refs):
+        if baseline_refs.get(ref) != post_refs.get(ref):
+            failures.append(f"unrelated ref changed during cleanup: {ref}")
 
-        canonical_matches = worktrees_for_branch(repo, plan.branch)
-        if len(canonical_matches) != 1 or not canonical_matches[0].path.is_dir():
-            failures.append("canonical branch is not checked out in exactly one available worktree")
-        else:
-            canonical_path = canonical_matches[0].path
-            failures.extend(worktree_failures(canonical_path, "canonical"))
-            if rev_parse(canonical_path, "HEAD") != remote_main:
-                failures.append("canonical HEAD does not match freshly fetched canonical remote HEAD")
+    allowed_paths = {
+        str(path)
+        for path in (plan.target_worktree, plan.canonical_worktree)
+        if path is not None
+    }
+    baseline_worktrees = {
+        item for item in plan.baseline_worktrees if item[0] not in allowed_paths
+    }
+    post_worktrees = {
+        item for item in _worktree_snapshot(repo) if item[0] not in allowed_paths
+    }
+    if baseline_worktrees != post_worktrees:
+        failures.append("unrelated worktree registration changed during cleanup")
 
-        if worktrees_for_branch(repo, plan.topic_branch):
-            failures.append("target topic worktree still exists")
-        if rev_parse(repo, topic_ref) is not None:
-            failures.append("target local topic branch still exists")
-        if plan.delete_remote:
-            remote_after, remote_error = remote_branch_sha(repo, plan.remote, plan.topic_branch)
-            if remote_error:
-                failures.append(remote_error)
-            elif remote_after is not None:
-                failures.append("requested remote topic branch still exists")
-        remote_after, _ = remote_branch_sha(repo, plan.remote, plan.topic_branch)
-        if remote_after is None and rev_parse(repo, remote_tracking_ref) is not None:
-            failures.append("target stale remote-tracking ref still exists")
-
-        baseline_refs = dict(plan.baseline_refs)
-        post_refs = snapshot_refs(repo)
-        allowed_refs = {
-            topic_ref,
-            remote_tracking_ref,
-            f"refs/heads/{plan.branch}",
-            f"refs/remotes/{plan.remote}/{plan.branch}",
-        }
-        for ref in sorted((set(baseline_refs) | set(post_refs)) - allowed_refs):
-            if baseline_refs.get(ref) != post_refs.get(ref):
-                failures.append(f"unrelated ref changed during cleanup: {ref}")
-
-        allowed_paths = {
-            str(path)
-            for path in (plan.target_worktree, plan.canonical_worktree)
-            if path is not None
-        }
-        baseline_worktrees = {
-            item for item in plan.baseline_worktrees if item[0] not in allowed_paths
-        }
-        post_worktrees = {
-            item for item in _worktree_snapshot(repo) if item[0] not in allowed_paths
-        }
-        if baseline_worktrees != post_worktrees:
-            failures.append("unrelated worktree registration changed during cleanup")
-
-        if failures:
-            return False, failures
-        return True, []
-    finally:
-        execute_plan.effects_started = effects_started  # type: ignore[attr-defined]
+    if failures:
+        return _execution_failure(failures, effects_started)
+    return ExecutionResult(True, (), effects_started)
 
 
 def main() -> int:
@@ -501,16 +543,15 @@ def main() -> int:
 
     print()
     print("SAFE CLEANUP EXECUTION")
-    execute_plan.effects_started = False  # type: ignore[attr-defined]
-    ok, failures = execute_plan(plan, Path(args.repo))
-    if not ok:
-        if getattr(execute_plan, "effects_started", False):
+    result = execute_plan(plan, Path(args.repo))
+    if not result.ok:
+        if result.effects_started:
             print("SAFE CLEANUP: INCOMPLETE")
             print("Some authorized effects may already have completed; no force recovery was attempted.")
         else:
             print("SAFE CLEANUP: BLOCKED")
             print("No cleanup effect was authorized after revalidation.")
-        for failure in failures:
+        for failure in result.failures:
             print(f"- {failure}")
         return 3
 
