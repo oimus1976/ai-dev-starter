@@ -344,6 +344,38 @@ def _execution_failure(
     return ExecutionResult(False, tuple(failures), effects_started)
 
 
+def _canonical_pre_effect_failures(repo: Path, plan: CleanupPlan) -> list[str]:
+    failures: list[str] = []
+    remote_main, error = refresh_remote_branch(repo, plan.remote, plan.branch)
+    if error or remote_main is None:
+        return [error or "canonical freshness could not be revalidated before cleanup effect"]
+    if remote_main != plan.canonical_remote_sha:
+        return ["canonical remote HEAD changed after cleanup revalidation; re-plan before effects"]
+
+    if plan.mode in {"linked", "canonical-only"}:
+        matches = worktrees_for_branch(repo, plan.branch)
+        if len(matches) != 1 or not matches[0].path.is_dir():
+            failures.append("canonical branch is not checked out in exactly one available worktree")
+        else:
+            failures.extend(worktree_failures(matches[0].path, "canonical"))
+            if rev_parse(matches[0].path, "HEAD") != remote_main:
+                failures.append("canonical HEAD changed after cleanup revalidation")
+    elif plan.mode == "single":
+        local_main = rev_parse(repo, f"refs/heads/{plan.branch}")
+        if local_main is None or not is_ancestor(repo, local_main, remote_main):
+            failures.append("local canonical branch no longer has a safe fast-forward path")
+    return failures
+
+
+def _topic_occupancy_failures(repo: Path, topic_branch: str) -> list[str]:
+    registry = git("worktree", "list", "--porcelain", cwd=repo, check=False)
+    if registry.returncode != 0:
+        return ["could not re-read worktree registry before local topic ref deletion"]
+    if worktrees_for_branch(repo, topic_branch):
+        return ["topic branch became occupied by a worktree before local ref deletion"]
+    return []
+
+
 def execute_plan(
     plan: CleanupPlan,
     any_repo: Path,
@@ -369,6 +401,10 @@ def execute_plan(
     if reasons or fresh is None:
         return _execution_failure(reasons or ["cleanup revalidation failed"], effects_started)
     plan = fresh
+
+    pre_effect = _canonical_pre_effect_failures(repo, plan)
+    if pre_effect:
+        return _execution_failure(pre_effect, effects_started)
 
     topic_ref = f"refs/heads/{plan.topic_branch}"
     remote_tracking_ref = f"refs/remotes/{plan.remote}/{plan.topic_branch}"
@@ -418,6 +454,9 @@ def execute_plan(
             return _execution_failure(
                 ["local topic ref changed before conditional deletion"], effects_started
             )
+        occupied = _topic_occupancy_failures(repo, plan.topic_branch)
+        if occupied:
+            return _execution_failure(occupied, effects_started)
         if not delete_ref_cas(repo, topic_ref, plan.expected_head):
             return _execution_failure(
                 ["conditional local topic ref deletion failed"], effects_started
