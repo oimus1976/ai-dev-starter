@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """Plan or execute fail-closed cleanup for one merged same-repository PR.
 
-v1 deliberately narrows destructive cleanup to operations for which Git itself
-can enforce the critical safety condition. In particular, local topic branches
-are auto-deleted only when the exact PR head is already an ancestor of the
-fresh canonical branch, and deletion uses ``git branch -d`` so Git protects
-branches checked out in any registered worktree. Squash/rebase-style topic refs
-are retained for manual cleanup. Remote-tracking refs are never deleted
-directly by this helper.
+v1 deliberately keeps local ref authority narrower than worktree cleanup.
+Eligible linked topic worktrees may be removed and a single clean topic checkout
+may be returned to canonical, but local topic branches and remote-tracking refs
+are retained. Remote topic deletion remains a separate explicit opt-in protected
+by an exact expected-SHA lease.
 """
 
 from __future__ import annotations
@@ -60,7 +58,6 @@ class CleanupPlan:
     canonical_worktree: Path | None
     canonical_remote_sha: str
     local_topic_present: bool
-    local_topic_delete_safe: bool
     remote_topic_sha: str | None
     remote_tracking_sha: str | None
     actions: tuple[str, ...]
@@ -283,12 +280,12 @@ def build_plan(
             f"remote-tracking ref {remote}/{evidence.head_ref} drifted from GitHub PR head"
         )
 
+    baseline_refs, refs_error = snapshot_refs(requested)
+    if refs_error or baseline_refs is None:
+        failures.append(refs_error or "local ref snapshot is unavailable")
+
     if failures:
         return None, failures
-
-    local_topic_delete_safe = (
-        local_topic_sha is not None and is_ancestor(requested, expected_head, remote_main)
-    )
 
     actions: list[str] = []
     if mode == "linked" and target is not None:
@@ -300,15 +297,9 @@ def build_plan(
             actions.append(f"fast-forward canonical branch to fresh {remote}/{branch}")
 
     if local_topic_sha is not None:
-        if local_topic_delete_safe:
-            actions.append(
-                "delete local topic branch with git branch -d after exact-head/ancestry checks"
-            )
-        else:
-            actions.append(
-                "retain local topic branch; PR head is not an ancestor of canonical "
-                "(manual cleanup only)"
-            )
+        actions.append(
+            "retain local topic branch; automatic local ref deletion is outside v1 safe cleanup"
+        )
 
     if delete_remote:
         if remote_topic is None:
@@ -321,6 +312,7 @@ def build_plan(
             "retain remote-tracking ref; direct tracking-ref pruning is outside v1 safe cleanup"
         )
 
+    assert baseline_refs is not None
     return (
         CleanupPlan(
             repository=repository,
@@ -334,12 +326,11 @@ def build_plan(
             canonical_worktree=canonical_path,
             canonical_remote_sha=remote_main,
             local_topic_present=local_topic_sha is not None,
-            local_topic_delete_safe=local_topic_delete_safe,
             remote_topic_sha=remote_topic.lower() if remote_topic else None,
             remote_tracking_sha=remote_tracking_sha.lower() if remote_tracking_sha else None,
             actions=tuple(actions),
             delete_remote=delete_remote,
-            baseline_refs=tuple(sorted(snapshot_refs(requested).items())),
+            baseline_refs=tuple(sorted(baseline_refs.items())),
             baseline_worktrees=tuple(
                 sorted((str(item.path), item.branch_ref, item.head) for item in worktrees)
             ),
@@ -366,10 +357,8 @@ def print_plan(plan: CleanupPlan) -> None:
     print("task worktree: eligible" if plan.target_worktree else "task worktree: already absent")
     if not plan.local_topic_present:
         print("local branch: already absent")
-    elif plan.local_topic_delete_safe:
-        print("local branch: safe-delete eligible")
     else:
-        print("local branch: retained (non-ancestor/squash-like)")
+        print("local branch: retained by v1")
     if plan.remote_topic_sha is None:
         print("remote branch: already absent")
     else:
@@ -442,46 +431,6 @@ def _canonical_pre_effect_failures(repo: Path, plan: CleanupPlan) -> list[str]:
         if local_main is None or not is_ancestor(repo, local_main, remote_main):
             failures.append("local canonical branch no longer has a safe fast-forward path")
     return failures
-
-
-def _canonical_path_after_local_effect(repo: Path, plan: CleanupPlan) -> Path | None:
-    worktrees, error = _read_worktrees(repo)
-    if error or worktrees is None:
-        return None
-    ref = f"refs/heads/{plan.branch}"
-    matches = [item for item in worktrees if item.branch_ref == ref and item.path.is_dir()]
-    return matches[0].path if len(matches) == 1 else None
-
-
-def _delete_local_topic_branch_safely(repo: Path, plan: CleanupPlan) -> tuple[bool, str | None]:
-    """Delete only a canonical-contained topic branch using Git's occupancy protection."""
-    topic_ref = f"refs/heads/{plan.topic_branch}"
-    current = rev_parse(repo, topic_ref)
-    if current != plan.expected_head:
-        return False, "local topic ref changed before safe branch deletion"
-    if not is_ancestor(repo, plan.expected_head, plan.canonical_remote_sha):
-        return False, "local topic branch is no longer proven contained in canonical history"
-
-    canonical_path = _canonical_path_after_local_effect(repo, plan)
-    if canonical_path is None:
-        return False, "canonical worktree could not be resolved before safe branch deletion"
-
-    result = git("branch", "-d", "--", plan.topic_branch, cwd=canonical_path, check=False)
-    if result.returncode == 0:
-        if rev_parse(canonical_path, topic_ref) is not None:
-            return False, "git reported local topic branch deletion but the ref still exists"
-        return True, None
-
-    worktrees, registry_error = _read_worktrees(canonical_path)
-    if registry_error or worktrees is None:
-        return (
-            False,
-            "git branch -d refused local topic branch deletion and worktree occupancy could not be re-read",
-        )
-    topic_branch_ref = f"refs/heads/{plan.topic_branch}"
-    if any(item.branch_ref == topic_branch_ref for item in worktrees):
-        return False, "topic branch became occupied by a worktree; Git refused safe deletion"
-    return False, "git branch -d refused local topic branch deletion; no forced deletion was attempted"
 
 
 def _stable_control_repo(repo: Path, plan: CleanupPlan) -> tuple[Path | None, str | None]:
@@ -579,19 +528,6 @@ def execute_plan(
             if merged.returncode != 0:
                 return _execution_failure(["canonical fast-forward failed"], effects_started)
 
-    if plan.local_topic_present and plan.local_topic_delete_safe:
-        current = rev_parse(control_repo, topic_ref)
-        if current != plan.expected_head:
-            return _execution_failure(
-                ["local topic ref changed before safe branch deletion"], effects_started
-            )
-        effects_started = True
-        deleted, deletion_error = _delete_local_topic_branch_safely(control_repo, plan)
-        if not deleted:
-            return _execution_failure(
-                [deletion_error or "safe local topic branch deletion failed"], effects_started
-            )
-
     if plan.delete_remote:
         if plan.remote_topic_sha is not None:
             effects_started = True
@@ -632,10 +568,7 @@ def execute_plan(
         failures.append("target topic worktree still exists")
 
     local_after = rev_parse(control_repo, topic_ref)
-    if plan.local_topic_delete_safe:
-        if local_after is not None:
-            failures.append("target local topic branch still exists after safe-delete path")
-    elif plan.local_topic_present and local_after != plan.expected_head:
+    if plan.local_topic_present and local_after != plan.expected_head:
         failures.append("retained local topic branch changed or disappeared during cleanup")
 
     remote_after, remote_error = remote_branch_sha(
@@ -646,17 +579,22 @@ def execute_plan(
     elif plan.delete_remote and remote_after is not None:
         failures.append("requested remote topic branch still exists")
 
+    post_refs, refs_error = snapshot_refs(control_repo)
+    if refs_error or post_refs is None:
+        return _execution_failure(
+            [refs_error or "local ref postcondition snapshot is unavailable"],
+            effects_started,
+        )
+
     baseline_refs = dict(plan.baseline_refs)
-    post_refs = snapshot_refs(control_repo)
     allowed_refs = {
-        topic_ref,
         f"refs/remotes/{plan.remote}/{plan.topic_branch}",
         f"refs/heads/{plan.branch}",
         f"refs/remotes/{plan.remote}/{plan.branch}",
     }
     for ref in sorted((set(baseline_refs) | set(post_refs)) - allowed_refs):
         if baseline_refs.get(ref) != post_refs.get(ref):
-            failures.append(f"unrelated ref changed during cleanup: {ref}")
+            failures.append(f"unrelated or retained ref changed during cleanup: {ref}")
 
     allowed_paths = {
         str(path)
@@ -732,8 +670,8 @@ def main() -> int:
     print("cleanup: completed")
     print(f"canonical: {plan.branch}")
     print("next_task_checkout: ready")
-    if plan.local_topic_present and not plan.local_topic_delete_safe:
-        print("local_topic_branch: retained for manual cleanup")
+    if plan.local_topic_present:
+        print("local_topic_branch: retained by v1")
     if plan.remote_tracking_sha is not None:
         print("remote_tracking_ref: retained by v1")
     return 0
