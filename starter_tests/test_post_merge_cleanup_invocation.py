@@ -111,7 +111,7 @@ class CleanupInvocationTests(unittest.TestCase):
         evidence = self.evidence(head)
         plan = self.plan_from(linked, evidence)
         self.assertEqual(plan.mode, "linked")
-        self.assertFalse(plan.local_topic_delete_safe)
+        self.assertIn("retain local topic branch", "\n".join(plan.actions))
 
         result = self.execute_from(linked, plan, evidence)
         self.assertTrue(result.ok, result.failures)
@@ -130,21 +130,14 @@ class CleanupInvocationTests(unittest.TestCase):
         evidence = self.evidence(head)
         plan = self.plan_from(linked, evidence)
         self.assertEqual(plan.mode, "linked")
-        self.assertTrue(plan.local_topic_delete_safe)
+        self.assertIn("retain local topic branch", "\n".join(plan.actions))
 
         result = self.execute_from(linked, plan, evidence)
         self.assertTrue(result.ok, result.failures)
         self.assertFalse(linked.exists())
-        self.assertNotEqual(
-            run(
-                "git",
-                "show-ref",
-                "--verify",
-                f"refs/heads/{self.topic}",
-                cwd=self.repo,
-                check=False,
-            ).returncode,
-            0,
+        self.assertEqual(
+            run("git", "rev-parse", f"refs/heads/{self.topic}", cwd=self.repo).stdout.strip(),
+            head,
         )
         self.assertEqual(run("git", "branch", "--show-current", cwd=self.repo).stdout.strip(), "main")
 
