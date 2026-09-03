@@ -113,10 +113,9 @@ class CleanupTests(unittest.TestCase):
             "remote_repository_identity",
             return_value=("oimus1976/ai-dev-starter", None),
         ):
-            cleanup.execute_plan.effects_started = False
             return cleanup.execute_plan(plan, self.repo, self.reader(ev))
 
-    def test_linked_squash_like_cleanup_removes_worktree_and_ref(self) -> None:
+    def test_linked_squash_like_cleanup_removes_worktree_but_retains_ref(self) -> None:
         linked, head = self.add_linked_topic()
         self.advance_remote_main()  # topic head intentionally is not an ancestor of main
         run("git", "pull", "--ff-only", "origin", "main", cwd=self.repo)
@@ -125,21 +124,15 @@ class CleanupTests(unittest.TestCase):
         plan, reasons = self.plan(head, ev=ev)
         self.assertFalse(reasons)
         self.assertEqual(plan.mode, "linked")
+        self.assertFalse(plan.local_topic_delete_safe)
         self.assertTrue(linked.exists())
 
         ok, failures = self.execute(plan, ev)
         self.assertTrue(ok, failures)
         self.assertFalse(linked.exists())
-        self.assertNotEqual(
-            run(
-                "git",
-                "show-ref",
-                "--verify",
-                f"refs/heads/{self.topic}",
-                cwd=self.repo,
-                check=False,
-            ).returncode,
-            0,
+        self.assertEqual(
+            run("git", "rev-parse", f"refs/heads/{self.topic}", cwd=self.repo).stdout.strip(),
+            head,
         )
         self.assertEqual(
             run("git", "branch", "--show-current", cwd=self.repo).stdout.strip(), "main"
@@ -157,7 +150,7 @@ class CleanupTests(unittest.TestCase):
             run("git", "rev-parse", f"refs/heads/{self.topic}", cwd=self.repo).stdout.strip(),
             head,
         )
-        self.assertIn("conditionally delete local topic ref", "\n".join(plan.actions))
+        self.assertIn("retain local topic branch", "\n".join(plan.actions))
 
     def test_closed_unmerged_is_blocked(self) -> None:
         _, head = self.add_linked_topic()
@@ -191,7 +184,7 @@ class CleanupTests(unittest.TestCase):
             any("local topic ref" in reason or "task HEAD" in reason for reason in reasons)
         )
 
-    def test_single_checkout_switches_and_fast_forwards_canonical(self) -> None:
+    def test_single_checkout_switches_and_fast_forwards_canonical_but_retains_squash_ref(self) -> None:
         run("git", "switch", "-c", self.topic, cwd=self.repo)
         (self.repo / "topic.txt").write_text("topic\n", encoding="utf-8")
         run("git", "add", "topic.txt", cwd=self.repo)
@@ -203,6 +196,7 @@ class CleanupTests(unittest.TestCase):
         plan, reasons = self.plan(head, ev=ev)
         self.assertFalse(reasons)
         self.assertEqual(plan.mode, "single")
+        self.assertFalse(plan.local_topic_delete_safe)
 
         ok, failures = self.execute(plan, ev)
         self.assertTrue(ok, failures)
@@ -210,16 +204,9 @@ class CleanupTests(unittest.TestCase):
             run("git", "branch", "--show-current", cwd=self.repo).stdout.strip(), "main"
         )
         self.assertEqual(run("git", "rev-parse", "HEAD", cwd=self.repo).stdout.strip(), remote_main)
-        self.assertNotEqual(
-            run(
-                "git",
-                "show-ref",
-                "--verify",
-                f"refs/heads/{self.topic}",
-                cwd=self.repo,
-                check=False,
-            ).returncode,
-            0,
+        self.assertEqual(
+            run("git", "rev-parse", f"refs/heads/{self.topic}", cwd=self.repo).stdout.strip(),
+            head,
         )
 
     def test_diverged_local_main_blocks_single_checkout(self) -> None:
@@ -288,11 +275,11 @@ class CleanupTests(unittest.TestCase):
         self.assertFalse(reasons)
 
         closed = self.evidence(head, state="CLOSED", merged_at=None)
-        ok, failures = self.execute(plan, closed)
-        self.assertFalse(ok)
+        result = self.execute(plan, closed)
+        self.assertFalse(result.ok)
         self.assertTrue(linked.exists())
-        self.assertTrue(any("not merged" in reason for reason in failures))
-        self.assertFalse(getattr(cleanup.execute_plan, "effects_started", False))
+        self.assertTrue(any("not merged" in reason for reason in result.failures))
+        self.assertFalse(result.effects_started)
 
 
 if __name__ == "__main__":
