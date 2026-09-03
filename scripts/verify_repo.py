@@ -28,9 +28,15 @@ REQUIRED = [
     ".github/pull_request_template.md",
     ".github/workflows/policy-check.yml",
     "scripts/bootstrap.py",
+    "scripts/closeout_state.py",
     "scripts/verify_local_closeout.py",
+    "scripts/post_merge_cleanup.py",
     "starter_tests/test_verify_repo.py",
     "starter_tests/test_local_closeout.py",
+    "starter_tests/test_post_merge_cleanup.py",
+    "starter_tests/test_post_merge_cleanup_adversarial.py",
+    "starter_tests/test_post_merge_cleanup_opaque_state.py",
+    "starter_tests/test_post_merge_cleanup_toctou.py",
 ]
 
 RISK_ORDER = {"ROUTINE": 1, "ELEVATED": 2, "HIGH_IMPACT": 3}

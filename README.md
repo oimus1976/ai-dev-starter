@@ -55,9 +55,14 @@ tracked change
     +--> comprehension gate
     +--> human Ready
     +--> human merge
+    +--> post-merge local closeout
+         +--> non-destructive verify
+         +--> target-scoped cleanup when eligible
 ```
 
 Exploration that is genuinely disposable does not need Issue/PR ceremony. Once work is intended to persist, it enters the tracked workflow.
+
+Post-merge cleanup is intentionally separate from verification. `post_merge_cleanup.py` reads merged-PR authority independently through authenticated GitHub CLI, plans by default, and requires `--execute` before changing local state. Remote branch deletion is a further explicit opt-in.
 
 ## Files
 
@@ -72,13 +77,16 @@ Exploration that is genuinely disposable does not need Issue/PR ceremony. Once w
 - `.github/workflows/project-ci.yml` — intentionally **absent** from the template; each generated project must add its own real CI.
 - `scripts/bootstrap.py` — dependency-free identity initializer.
 - `scripts/verify_repo.py` — dependency-free starter consistency check.
+- `scripts/verify_local_closeout.py` — non-destructive local closeout verifier.
+- `scripts/closeout_state.py` — shared dependency-free Git/worktree state helpers used by closeout tooling.
+- `scripts/post_merge_cleanup.py` — fail-closed merged-PR cleanup planner/executor; dry-run by default.
 - `starter_tests/` — regression tests for ai-dev-starter itself.
 - `tests/` — reserved for generated projects' own tests.
 
 ## Baseline freshness
 
 Baseline version: **0.5**  
-Reviewed: **2026-08-30**  
+Reviewed: **2026-09-02**  
 Evidence window: **recent active projects only**
 
 The baseline itself is subject to comprehension debt and policy drift. Re-review it after real adoption feedback, not merely on a calendar because a date elapsed.

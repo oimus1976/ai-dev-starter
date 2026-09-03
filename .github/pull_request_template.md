@@ -65,7 +65,9 @@ Owner should be able to explain:
 
 ## Post-merge local closeout
 
-This is intentionally **not** a pre-merge acceptance checkbox. After the human merge, independently confirm the merged PR and close out the local state before reporting the task locally closed.
+This is intentionally **not** a pre-merge acceptance checkbox. After the human merge, independently confirm the merged PR and close out local state before reporting the task locally closed.
 
-- If the PR checkout is the canonical checkout: run `python scripts/verify_local_closeout.py`.
-- If the PR used a linked topic worktree while canonical `main` is checked out elsewhere: read the merged PR's full head SHA from GitHub and run `python scripts/verify_local_closeout.py --expected-pr-head <FULL_PR_HEAD_SHA>` from the topic worktree. A pass confirms the topic worktree has no unaccounted local residue and the separate canonical worktree is clean/synchronized; the topic worktree itself need not become `main` or be deleted.
+- `python scripts/verify_local_closeout.py` remains the non-destructive verifier. For a linked topic worktree, supply the independently confirmed full PR head with `--expected-pr-head`.
+- To retire only the merged PR's eligible topic residue, first run the separate dry-run planner: `python scripts/post_merge_cleanup.py --pr <PR_NUMBER>`.
+- An explicit `--execute` performs cleanup only after fresh GitHub/local revalidation. Remote topic deletion remains off unless `--delete-remote` is explicitly requested and its exact expected-SHA lease passes.
+- `SAFE CLEANUP: BLOCKED` means no cleanup effect was authorized. `SAFE CLEANUP: INCOMPLETE` means an earlier authorized effect may already have completed; stop and inspect rather than forcing recovery.

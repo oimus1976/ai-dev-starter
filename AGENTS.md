@@ -70,15 +70,15 @@ Human merge completion and local closeout are separate facts.
 
 When a tracked PR used a local checkout/worktree, do not report the work item as locally closed out until GitHub independently confirms the merge and the applicable local closeout path passes.
 
-### Same/canonical checkout
+### Non-destructive verification
+
+`scripts/verify_local_closeout.py` remains the non-destructive diagnostic/verifier.
 
 If the PR checkout itself is the canonical checkout used for the next task, run:
 
 `python scripts/verify_local_closeout.py`
 
 The verifier requires fresh canonical remote state, canonical `main` (unless project-specific override), a clean tracked+untracked worktree, no merge/rebase/cherry-pick/revert/bisect in progress, and exact local/canonical-remote HEAD match.
-
-### Separate linked topic worktree
 
 If the PR used a linked topic worktree while canonical `main` remains checked out in another worktree:
 
@@ -87,8 +87,30 @@ If the PR used a linked topic worktree while canonical `main` remains checked ou
 3. require the topic worktree to be clean, have no Git operation in progress, and still be at that confirmed PR head;
 4. require the separately checked-out canonical worktree to be clean and exactly synchronized to fresh `origin/main`.
 
-A successful topic-worktree closeout means the task worktree has no unaccounted local residue and the canonical worktree is the next-work entry point. It does **not** mean the topic worktree itself became `main`, and it does not require deleting that topic branch/worktree.
+A successful topic-worktree verification means the task worktree has no unaccounted local residue and the canonical worktree is the next-work entry point. It does **not** mean the topic worktree itself became `main`.
 
 The verifier may `git fetch` to establish freshness, but it must not reset, stash, discard files, delete branches/worktrees, or perform other destructive cleanup merely to make the gate pass.
 
-If the gate fails, preserve intentional local work first and report the unresolved local state instead of claiming closeout. Cleanup/retirement of topic branches or worktrees remains a separate decision.
+### Fail-closed safe cleanup
+
+When the merged task's closeout procedure includes retirement of its topic worktree, use the separate cleanup tool. The normal first command is plan-only:
+
+`python scripts/post_merge_cleanup.py --pr <PR_NUMBER>`
+
+The cleanup tool must perform its own fresh GitHub PR read through authenticated `gh`; operator-supplied merge claims are not sufficient. Its cleanup identity is the same-repository merged PR's exact head branch and head SHA.
+
+Only an eligible plan may proceed to:
+
+`python scripts/post_merge_cleanup.py --pr <PR_NUMBER> --execute`
+
+Local execution is limited to the exact merged PR worktree/switch state. It may normally remove an eligible linked topic worktree and safely return a single clean topic checkout to canonical `main`. **v1 never auto-deletes the local topic branch**, regardless of merge style or ancestry. The local topic ref is retained and must remain at the exact PR head if it existed at plan time. v1 also retains remote-tracking refs rather than deleting them from a non-atomic remote-absence observation.
+
+The helper must not use reset, stash, content discard, `git clean`, forced worktree removal, `git branch -D`, raw local-branch `update-ref -d`, normal `git branch -d` for automatic topic retirement, unconditional ref deletion, or broad prune to make cleanup succeed.
+
+Before a worktree-changing cleanup effect, v1 also fails closed on local state that ordinary `git status` can hide or classify as disposable: ignored files/directories, `assume-unchanged` or `skip-worktree` index flags, and submodule gitlinks. Resolve or deliberately preserve those states outside the cleanup helper rather than teaching the helper to guess which local data is expendable.
+
+Remote topic deletion is a stronger optional effect and is off by default. Use `--delete-remote` only when that remote write is explicitly part of the closeout procedure; the tool must re-check the remote ref and use an exact expected-SHA lease.
+
+`--execute` re-reads authority and mutable Git state rather than trusting a prior plan. Worktree-registry authorization and local-ref postconditions must come from successful reads; read failure is never equivalent to an empty registry/ref set. A pre-effect failure is `SAFE CLEANUP: BLOCKED` and performs no cleanup. A failure after an authorized effect has already completed or an effect command has begun is `SAFE CLEANUP: INCOMPLETE`; report the partial/ambiguous state and stop rather than attempting force recovery.
+
+If either verifier or cleanup blocks, preserve intentional local work and report the unresolved state. Canonical branch/worktree and unrelated worktrees/refs are never cleanup targets.
