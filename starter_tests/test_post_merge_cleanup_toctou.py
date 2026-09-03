@@ -124,43 +124,61 @@ class CleanupToctouTests(unittest.TestCase):
         )
         self.assertTrue(any("canonical remote HEAD changed" in reason for reason in result.failures))
 
-    def test_topic_reoccupied_after_worktree_removal_is_not_ref_deleted(self) -> None:
-        linked, head = self.add_topic()
-        run("git", "merge", "--no-ff", self.topic, "-m", "merge topic", cwd=self.repo)
-        run("git", "push", "origin", "main", cwd=self.repo)
-        evidence = self.evidence(head)
-        plan = self.build_plan(evidence)
-        self.assertTrue(plan.local_topic_delete_safe)
+    def test_local_topic_ref_drift_after_worktree_removal_is_detected_not_deleted(self) -> None:
+        linked, head, evidence, plan = self.prepare_linked()
+        replacement = run("git", "rev-parse", "main", cwd=self.repo).stdout.strip()
+        real_remote_delete = cleanup._remote_delete_with_lease
 
-        replacement = self.temp / "replacement-topic-worktree"
-        real_git = cleanup.git
-        reoccupied = False
+        def drift_local_ref(repo: Path, current_plan: cleanup.CleanupPlan) -> bool:
+            run(
+                "git",
+                "update-ref",
+                f"refs/heads/{self.topic}",
+                replacement,
+                head,
+                cwd=self.repo,
+            )
+            return real_remote_delete(repo, current_plan)
 
-        def remove_then_reoccupy(*args: str, cwd: Path, check: bool = True):
-            nonlocal reoccupied
-            result = real_git(*args, cwd=cwd, check=check)
-            if args[:2] == ("worktree", "remove") and result.returncode == 0 and not reoccupied:
-                run("git", "worktree", "add", str(replacement), self.topic, cwd=self.repo)
-                reoccupied = True
-            return result
+        plan_with_remote = cleanup.CleanupPlan(
+            repository=plan.repository,
+            pr=plan.pr,
+            branch=plan.branch,
+            remote=plan.remote,
+            topic_branch=plan.topic_branch,
+            expected_head=plan.expected_head,
+            mode=plan.mode,
+            target_worktree=plan.target_worktree,
+            canonical_worktree=plan.canonical_worktree,
+            canonical_remote_sha=plan.canonical_remote_sha,
+            local_topic_present=plan.local_topic_present,
+            remote_topic_sha=plan.remote_topic_sha,
+            remote_tracking_sha=plan.remote_tracking_sha,
+            actions=plan.actions,
+            delete_remote=True,
+            baseline_refs=plan.baseline_refs,
+            baseline_worktrees=plan.baseline_worktrees,
+        )
 
         with patch.object(
             cleanup,
             "remote_repository_identity",
             return_value=("oimus1976/ai-dev-starter", None),
-        ), patch.object(cleanup, "git", side_effect=remove_then_reoccupy):
-            result = cleanup.execute_plan(plan, self.repo, self.reader(evidence))
+        ), patch.object(cleanup, "build_plan", return_value=(plan_with_remote, [])), patch.object(
+            cleanup, "_remote_delete_with_lease", side_effect=drift_local_ref
+        ):
+            result = cleanup.execute_plan(plan_with_remote, self.repo, self.reader(evidence))
 
         self.assertFalse(result.ok)
         self.assertTrue(result.effects_started)
         self.assertFalse(linked.exists())
-        self.assertTrue(replacement.exists())
         self.assertEqual(
             run("git", "rev-parse", f"refs/heads/{self.topic}", cwd=self.repo).stdout.strip(),
-            head,
+            replacement,
         )
-        self.assertEqual(run("git", "rev-parse", "HEAD", cwd=replacement).stdout.strip(), head)
-        self.assertTrue(any("became occupied" in reason for reason in result.failures))
+        self.assertTrue(
+            any("retained local topic branch changed" in reason for reason in result.failures)
+        )
 
     def test_worktree_registry_read_failure_is_explicit_not_empty(self) -> None:
         _, _, evidence, _ = self.prepare_linked()
@@ -188,6 +206,53 @@ class CleanupToctouTests(unittest.TestCase):
 
         self.assertIsNone(plan)
         self.assertTrue(any("worktree registry" in reason for reason in reasons))
+
+    def test_ref_snapshot_failure_blocks_plan(self) -> None:
+        _, _, evidence, _ = self.prepare_linked()
+        with patch.object(
+            cleanup,
+            "remote_repository_identity",
+            return_value=("oimus1976/ai-dev-starter", None),
+        ), patch.object(
+            cleanup,
+            "snapshot_refs",
+            return_value=(None, "could not snapshot local refs"),
+        ):
+            plan, reasons = cleanup.build_plan(
+                self.repo,
+                self.pr_number,
+                "main",
+                "origin",
+                None,
+                False,
+                self.reader(evidence),
+            )
+        self.assertIsNone(plan)
+        self.assertTrue(any("snapshot local refs" in reason for reason in reasons))
+
+    def test_ref_snapshot_failure_after_effect_is_incomplete(self) -> None:
+        linked, _, evidence, plan = self.prepare_linked()
+        real_snapshot = cleanup.snapshot_refs
+        calls = 0
+
+        def fail_second_snapshot(repo: Path):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return real_snapshot(repo)
+            return None, "could not snapshot local refs"
+
+        with patch.object(
+            cleanup,
+            "remote_repository_identity",
+            return_value=("oimus1976/ai-dev-starter", None),
+        ), patch.object(cleanup, "snapshot_refs", side_effect=fail_second_snapshot):
+            result = cleanup.execute_plan(plan, self.repo, self.reader(evidence))
+
+        self.assertFalse(result.ok)
+        self.assertTrue(result.effects_started)
+        self.assertFalse(linked.exists())
+        self.assertTrue(any("snapshot local refs" in reason for reason in result.failures))
 
     def test_remote_branch_appearing_after_absent_plan_is_not_deleted(self) -> None:
         linked, head, evidence, plan = self.prepare_linked()
