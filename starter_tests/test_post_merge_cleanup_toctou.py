@@ -124,8 +124,14 @@ class CleanupToctouTests(unittest.TestCase):
         )
         self.assertTrue(any("canonical remote HEAD changed" in reason for reason in result.failures))
 
-    def test_topic_reoccupied_after_worktree_removal_blocks_ref_deletion(self) -> None:
-        linked, head, evidence, plan = self.prepare_linked()
+    def test_topic_reoccupied_after_worktree_removal_is_not_ref_deleted(self) -> None:
+        linked, head = self.add_topic()
+        run("git", "merge", "--no-ff", self.topic, "-m", "merge topic", cwd=self.repo)
+        run("git", "push", "origin", "main", cwd=self.repo)
+        evidence = self.evidence(head)
+        plan = self.build_plan(evidence)
+        self.assertTrue(plan.local_topic_delete_safe)
+
         replacement = self.temp / "replacement-topic-worktree"
         real_git = cleanup.git
         reoccupied = False
@@ -153,7 +159,35 @@ class CleanupToctouTests(unittest.TestCase):
             run("git", "rev-parse", f"refs/heads/{self.topic}", cwd=self.repo).stdout.strip(),
             head,
         )
+        self.assertEqual(run("git", "rev-parse", "HEAD", cwd=replacement).stdout.strip(), head)
         self.assertTrue(any("became occupied" in reason for reason in result.failures))
+
+    def test_worktree_registry_read_failure_is_explicit_not_empty(self) -> None:
+        _, _, evidence, _ = self.prepare_linked()
+        real_git = cleanup.git
+
+        def fail_registry(*args: str, cwd: Path, check: bool = True):
+            if args[:3] == ("worktree", "list", "--porcelain"):
+                return subprocess.CompletedProcess(["git", *args], 1, "registry unavailable\n")
+            return real_git(*args, cwd=cwd, check=check)
+
+        with patch.object(
+            cleanup,
+            "remote_repository_identity",
+            return_value=("oimus1976/ai-dev-starter", None),
+        ), patch.object(cleanup, "git", side_effect=fail_registry):
+            plan, reasons = cleanup.build_plan(
+                self.repo,
+                self.pr_number,
+                "main",
+                "origin",
+                None,
+                False,
+                self.reader(evidence),
+            )
+
+        self.assertIsNone(plan)
+        self.assertTrue(any("worktree registry" in reason for reason in reasons))
 
     def test_remote_branch_appearing_after_absent_plan_is_not_deleted(self) -> None:
         linked, head, evidence, plan = self.prepare_linked()
