@@ -174,16 +174,28 @@ class CleanupAdversarialTests(unittest.TestCase):
         self.assertIsNone(plan)
         self.assertTrue(any("canonical working tree is not clean" in reason for reason in reasons))
 
-    def test_normal_merge_is_supported(self) -> None:
+    def test_normal_merge_is_supported_and_safe_branch_delete_runs(self) -> None:
         linked, head = self.add_linked_topic()
         run("git", "merge", "--no-ff", self.topic, "-m", "merge topic", cwd=self.repo)
         run("git", "push", "origin", "main", cwd=self.repo)
         evidence = self.evidence(head)
         plan, reasons = self.plan(evidence)
         self.assertFalse(reasons)
+        self.assertTrue(plan.local_topic_delete_safe)
         result = self.execute(plan, evidence)
         self.assertTrue(result.ok, result.failures)
         self.assertFalse(linked.exists())
+        self.assertNotEqual(
+            run(
+                "git",
+                "show-ref",
+                "--verify",
+                f"refs/heads/{self.topic}",
+                cwd=self.repo,
+                check=False,
+            ).returncode,
+            0,
+        )
 
     def test_remote_tracking_drift_is_blocked(self) -> None:
         _, head, evidence = self.prepare_linked()
@@ -194,7 +206,7 @@ class CleanupAdversarialTests(unittest.TestCase):
         self.assertTrue(any("remote-tracking ref" in reason and "drifted" in reason for reason in reasons))
         self.assertNotEqual(head, remote_main)
 
-    def test_stale_target_remote_tracking_ref_is_removed_only_when_expected(self) -> None:
+    def test_stale_target_remote_tracking_ref_is_retained_in_v1(self) -> None:
         linked, head = self.add_linked_topic(push=True)
         run(
             "git",
@@ -210,20 +222,18 @@ class CleanupAdversarialTests(unittest.TestCase):
         evidence = self.evidence(head)
         plan, reasons = self.plan(evidence)
         self.assertFalse(reasons)
-        self.assertIn("stale remote-tracking", "\n".join(plan.actions))
+        self.assertIn("retain remote-tracking ref", "\n".join(plan.actions))
         result = self.execute(plan, evidence)
         self.assertTrue(result.ok, result.failures)
         self.assertFalse(linked.exists())
-        self.assertNotEqual(
+        self.assertEqual(
             run(
                 "git",
-                "show-ref",
-                "--verify",
+                "rev-parse",
                 f"refs/remotes/origin/{self.topic}",
                 cwd=self.repo,
-                check=False,
-            ).returncode,
-            0,
+            ).stdout.strip(),
+            head,
         )
 
     def test_revalidation_failure_has_no_effect(self) -> None:
