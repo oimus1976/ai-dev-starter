@@ -174,27 +174,20 @@ class CleanupAdversarialTests(unittest.TestCase):
         self.assertIsNone(plan)
         self.assertTrue(any("canonical working tree is not clean" in reason for reason in reasons))
 
-    def test_normal_merge_is_supported_and_safe_branch_delete_runs(self) -> None:
+    def test_normal_merge_removes_worktree_but_retains_local_branch(self) -> None:
         linked, head = self.add_linked_topic()
         run("git", "merge", "--no-ff", self.topic, "-m", "merge topic", cwd=self.repo)
         run("git", "push", "origin", "main", cwd=self.repo)
         evidence = self.evidence(head)
         plan, reasons = self.plan(evidence)
         self.assertFalse(reasons)
-        self.assertTrue(plan.local_topic_delete_safe)
+        self.assertIn("retain local topic branch", "\n".join(plan.actions))
         result = self.execute(plan, evidence)
         self.assertTrue(result.ok, result.failures)
         self.assertFalse(linked.exists())
-        self.assertNotEqual(
-            run(
-                "git",
-                "show-ref",
-                "--verify",
-                f"refs/heads/{self.topic}",
-                cwd=self.repo,
-                check=False,
-            ).returncode,
-            0,
+        self.assertEqual(
+            run("git", "rev-parse", f"refs/heads/{self.topic}", cwd=self.repo).stdout.strip(),
+            head,
         )
 
     def test_remote_tracking_drift_is_blocked(self) -> None:
