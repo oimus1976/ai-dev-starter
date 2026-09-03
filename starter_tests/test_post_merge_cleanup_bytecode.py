@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -20,9 +21,14 @@ class CleanupBytecodeTests(unittest.TestCase):
         for name in ("post_merge_cleanup.py", "closeout_state.py"):
             shutil.copy2(ROOT / "scripts" / name, scripts / name)
 
+        env = os.environ.copy()
+        env.pop("PYTHONDONTWRITEBYTECODE", None)
+        env.pop("PYTHONPYCACHEPREFIX", None)
+
         result = subprocess.run(
             [sys.executable, str(scripts / "post_merge_cleanup.py"), "--help"],
             cwd=temp,
+            env=env,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
