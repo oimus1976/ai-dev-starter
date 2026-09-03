@@ -282,7 +282,13 @@ def delete_ref_cas(repo: Path, ref: str, expected: str) -> bool:
     return result.returncode == 0
 
 
-def snapshot_refs(repo: Path) -> dict[str, str]:
+def snapshot_refs(repo: Path) -> tuple[dict[str, str] | None, str | None]:
+    """Return a complete local heads/remotes snapshot or an explicit error.
+
+    Cleanup uses this as a postcondition boundary. An unreadable or malformed
+    ref snapshot must never be represented as an empty set because that would
+    turn uncertainty into a false PASS.
+    """
     result = git(
         "for-each-ref",
         "--format=%(refname) %(objectname)",
@@ -291,11 +297,13 @@ def snapshot_refs(repo: Path) -> dict[str, str]:
         cwd=repo,
         check=False,
     )
-    refs: dict[str, str] = {}
     if result.returncode != 0:
-        return refs
+        return None, "could not snapshot local refs"
+
+    refs: dict[str, str] = {}
     for line in result.stdout.splitlines():
         ref, sep, sha = line.partition(" ")
-        if sep and FULL_SHA_RE.fullmatch(sha):
-            refs[ref] = sha
-    return refs
+        if not sep or not ref or not FULL_SHA_RE.fullmatch(sha):
+            return None, "local ref snapshot contained an invalid entry"
+        refs[ref] = sha
+    return refs, None
