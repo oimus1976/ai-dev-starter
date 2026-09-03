@@ -124,8 +124,8 @@ class CleanupTests(unittest.TestCase):
         plan, reasons = self.plan(head, ev=ev)
         self.assertFalse(reasons)
         self.assertEqual(plan.mode, "linked")
-        self.assertFalse(plan.local_topic_delete_safe)
         self.assertTrue(linked.exists())
+        self.assertIn("retain local topic branch", "\n".join(plan.actions))
 
         ok, failures = self.execute(plan, ev)
         self.assertTrue(ok, failures)
@@ -184,7 +184,7 @@ class CleanupTests(unittest.TestCase):
             any("local topic ref" in reason or "task HEAD" in reason for reason in reasons)
         )
 
-    def test_single_checkout_switches_and_fast_forwards_canonical_but_retains_squash_ref(self) -> None:
+    def test_single_checkout_switches_and_fast_forwards_canonical_but_retains_ref(self) -> None:
         run("git", "switch", "-c", self.topic, cwd=self.repo)
         (self.repo / "topic.txt").write_text("topic\n", encoding="utf-8")
         run("git", "add", "topic.txt", cwd=self.repo)
@@ -196,7 +196,7 @@ class CleanupTests(unittest.TestCase):
         plan, reasons = self.plan(head, ev=ev)
         self.assertFalse(reasons)
         self.assertEqual(plan.mode, "single")
-        self.assertFalse(plan.local_topic_delete_safe)
+        self.assertIn("retain local topic branch", "\n".join(plan.actions))
 
         ok, failures = self.execute(plan, ev)
         self.assertTrue(ok, failures)
@@ -265,6 +265,10 @@ class CleanupTests(unittest.TestCase):
             cwd=self.repo,
         )
         self.assertEqual(ls.stdout.strip(), "")
+        self.assertEqual(
+            run("git", "rev-parse", f"refs/heads/{self.topic}", cwd=self.repo).stdout.strip(),
+            head,
+        )
 
     def test_execute_revalidates_github_state_before_effects(self) -> None:
         linked, head = self.add_linked_topic()
