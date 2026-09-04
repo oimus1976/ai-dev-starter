@@ -10,12 +10,17 @@ by an exact expected-SHA lease.
 
 from __future__ import annotations
 
+import sys
+
+# Prevent the cleanup tool's own local imports from creating ignored bytecode
+# residue before the worktree safety inspection runs.
+sys.dont_write_bytecode = True
+
 import argparse
 from dataclasses import dataclass
 import json
 from pathlib import Path
 import subprocess
-import sys
 from typing import Callable, Iterator
 
 from closeout_state import (
