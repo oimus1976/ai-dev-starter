@@ -277,6 +277,32 @@ class CleanupAdversarialTests(unittest.TestCase):
         self.assertIsNone(plan)
         self.assertTrue(any("primary topic worktree with linked canonical worktree is not safely supported for removal" in r for r in reasons))
 
+
+    def test_primary_topic_linked_main_with_unrelated_active_worktree_blocks_safely(self) -> None:
+        run("git", "checkout", "-b", self.topic, cwd=self.repo)
+
+        linked_main = self.temp / "linked-main"
+        run("git", "worktree", "add", str(linked_main), "main", cwd=self.repo)
+
+        unrelated = self.temp / "unrelated-worktree"
+        run("git", "worktree", "add", "-b", "other-branch", str(unrelated), "main", cwd=self.repo)
+
+        (unrelated / "dirty.txt").write_text("untouched\n", encoding="utf-8")
+
+        head = run("git", "rev-parse", "HEAD", cwd=self.repo).stdout.strip()
+        remote_main = self.advance_remote_main()
+        run("git", "pull", "--ff-only", "origin", "main", cwd=linked_main)
+
+        ev = self.evidence(head)
+        plan, reasons = self.plan(ev)
+
+        self.assertIsNone(plan)
+        self.assertTrue(any("primary topic worktree with linked canonical worktree is not safely supported for removal" in r for r in reasons))
+
+        self.assertTrue(unrelated.exists())
+        self.assertTrue((unrelated / "dirty.txt").exists())
+        self.assertEqual((unrelated / "dirty.txt").read_text(encoding="utf-8"), "untouched\n")
+
     def test_unrelated_worktree_and_ref_survive_cleanup(self) -> None:
         linked, _, evidence = self.prepare_linked()
         other_branch = "codex/other-unfinished"
