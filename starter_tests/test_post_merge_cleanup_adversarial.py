@@ -257,6 +257,26 @@ class CleanupAdversarialTests(unittest.TestCase):
         self.assertFalse(linked.exists())
         self.assertTrue(any("remote topic branch deletion failed" in reason for reason in result.failures))
 
+
+    def test_linked_main_and_primary_topic_blocks_cleanup(self) -> None:
+        run("git", "checkout", "-b", self.topic, cwd=self.repo)
+        linked = self.temp / "linked-main"
+        run("git", "worktree", "add", str(linked), "main", cwd=self.repo)
+
+        head = run("git", "rev-parse", "HEAD", cwd=self.repo).stdout.strip()
+        remote_main = self.advance_remote_main()
+        run("git", "pull", "--ff-only", "origin", "main", cwd=linked)
+
+        wts = cleanup._read_worktrees(self.repo)[0]
+        topic_wt = next(w for w in wts if w.branch_ref == f"refs/heads/{self.topic}")
+        self.assertTrue(topic_wt.is_primary)
+
+        ev = self.evidence(head)
+        plan, reasons = self.plan(ev)
+
+        self.assertIsNone(plan)
+        self.assertTrue(any("primary topic worktree with linked canonical worktree is not safely supported for removal" in r for r in reasons))
+
     def test_unrelated_worktree_and_ref_survive_cleanup(self) -> None:
         linked, _, evidence = self.prepare_linked()
         other_branch = "codex/other-unfinished"

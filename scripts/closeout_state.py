@@ -29,6 +29,7 @@ class WorktreeInfo:
     bare: bool = False
     detached: bool = False
     prunable: bool = False
+    is_primary: bool = False
 
 
 def git(*args: str, cwd: Path, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -168,14 +169,47 @@ def list_worktrees(repo: Path) -> list[WorktreeInfo]:
         raw_path = entry.get("worktree")
         if not raw_path:
             continue
+
+        wt_path = Path(raw_path).resolve()
+        is_primary = False
+        if wt_path.is_dir():
+            git_dir_res = git(
+                "rev-parse",
+                "--path-format=absolute",
+                "--git-dir",
+                cwd=wt_path,
+                check=False,
+            )
+            common_dir_res = git(
+                "rev-parse",
+                "--path-format=absolute",
+                "--git-common-dir",
+                cwd=wt_path,
+                check=False,
+            )
+
+            if git_dir_res.returncode == 0 and common_dir_res.returncode == 0:
+                # We need to normcase/resolve them since symlinks in tests can break exact equality
+                # if git returns an unresolved absolute path for one and resolved for another.
+                git_dir = Path(git_dir_res.stdout.strip()).resolve()
+                common_dir = Path(common_dir_res.stdout.strip()).resolve()
+
+                # Check for the literal values as well because they were matching in test above
+                gd_raw = git_dir_res.stdout.strip()
+                cd_raw = common_dir_res.stdout.strip()
+
+                if git_dir == common_dir or gd_raw == cd_raw:
+                    is_primary = True
+
         entries.append(
             WorktreeInfo(
-                path=Path(raw_path).resolve(),
+                path=wt_path,
                 branch_ref=entry.get("branch"),
                 head=entry.get("HEAD"),
                 bare="bare" in entry,
                 detached="detached" in entry,
                 prunable="prunable" in entry,
+                is_primary=is_primary,
             )
         )
     return entries
