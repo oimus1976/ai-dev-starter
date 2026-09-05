@@ -146,10 +146,10 @@ def cleanup_worktree_failures(worktree: Path, label: str) -> list[str]:
     return failures
 
 
-def list_worktrees(repo: Path) -> list[WorktreeInfo]:
+def list_worktrees(repo: Path) -> tuple[list[WorktreeInfo] | None, str | None]:
     result = git("worktree", "list", "--porcelain", cwd=repo, check=False)
     if result.returncode != 0:
-        return []
+        return None, "could not read worktree registry"
 
     raw_entries: list[dict[str, str]] = []
     current: dict[str, str] = {}
@@ -168,7 +168,7 @@ def list_worktrees(repo: Path) -> list[WorktreeInfo]:
     for entry in raw_entries:
         raw_path = entry.get("worktree")
         if not raw_path:
-            continue
+            return None, "worktree registry contained an entry without a path"
 
         wt_path = Path(raw_path).resolve()
         is_primary = False
@@ -188,18 +188,17 @@ def list_worktrees(repo: Path) -> list[WorktreeInfo]:
                 check=False,
             )
 
-            if git_dir_res.returncode == 0 and common_dir_res.returncode == 0:
-                # We need to normcase/resolve them since symlinks in tests can break exact equality
-                # if git returns an unresolved absolute path for one and resolved for another.
-                git_dir = Path(git_dir_res.stdout.strip()).resolve()
-                common_dir = Path(common_dir_res.stdout.strip()).resolve()
+            if git_dir_res.returncode != 0 or common_dir_res.returncode != 0:
+                return None, "could not determine primary vs linked topology for worktree"
 
-                # Check for the literal values as well because they were matching in test above
-                gd_raw = git_dir_res.stdout.strip()
-                cd_raw = common_dir_res.stdout.strip()
+            git_dir = Path(git_dir_res.stdout.strip()).resolve()
+            common_dir = Path(common_dir_res.stdout.strip()).resolve()
 
-                if git_dir == common_dir or gd_raw == cd_raw:
-                    is_primary = True
+            gd_raw = git_dir_res.stdout.strip()
+            cd_raw = common_dir_res.stdout.strip()
+
+            if git_dir == common_dir or gd_raw == cd_raw:
+                is_primary = True
 
         entries.append(
             WorktreeInfo(
@@ -212,12 +211,14 @@ def list_worktrees(repo: Path) -> list[WorktreeInfo]:
                 is_primary=is_primary,
             )
         )
-    return entries
-
+    return entries, None
 
 def worktrees_for_branch(repo: Path, branch: str) -> list[WorktreeInfo]:
     ref = f"refs/heads/{branch}"
-    return [entry for entry in list_worktrees(repo) if entry.branch_ref == ref]
+    entries, _ = list_worktrees(repo)
+    if entries is None:
+        return []
+    return [entry for entry in entries if entry.branch_ref == ref]
 
 
 def canonical_worktree(repo: Path, branch: str) -> Path | None:

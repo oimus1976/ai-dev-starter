@@ -120,13 +120,9 @@ def _read_worktrees(repo: Path) -> tuple[list[WorktreeInfo] | None, str | None]:
     A failed registry read is never represented as an empty registry.
     """
     from closeout_state import list_worktrees
-    result = git("worktree", "list", "--porcelain", cwd=repo, check=False)
-    if result.returncode != 0:
-        return None, "could not read worktree registry"
-
-    entries = list_worktrees(repo)
-    if not entries and result.stdout.strip() != "":
-         return None, "worktree registry contained an entry without a path"
+    entries, err = list_worktrees(repo)
+    if err:
+        return None, err
     return entries, None
 
 

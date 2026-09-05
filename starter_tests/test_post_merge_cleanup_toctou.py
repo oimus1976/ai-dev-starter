@@ -180,6 +180,37 @@ class CleanupToctouTests(unittest.TestCase):
             any("retained local topic branch changed" in reason for reason in result.failures)
         )
 
+
+    def test_worktree_registry_malformed_entry_fails_closed(self) -> None:
+        _, _, evidence, _ = self.prepare_linked()
+        real_git = cleanup.git
+
+        def fail_registry(*args: str, cwd: Path, check: bool = True):
+            if args[:3] == ("worktree", "list", "--porcelain"):
+                res = real_git(*args, cwd=cwd, check=check)
+                bad_stdout = res.stdout + "\nbranch refs/heads/some-branch\nHEAD 1234567890abcdef1234567890abcdef12345678\n"
+                return subprocess.CompletedProcess(["git", *args], 0, bad_stdout)
+            return real_git(*args, cwd=cwd, check=check)
+
+        import closeout_state
+        with patch.object(
+            cleanup,
+            "remote_repository_identity",
+            return_value=("oimus1976/ai-dev-starter", None),
+        ), patch.object(closeout_state, "git", side_effect=fail_registry):
+            plan, reasons = cleanup.build_plan(
+                self.repo,
+                self.pr_number,
+                "main",
+                "origin",
+                None,
+                False,
+                self.reader(evidence),
+            )
+
+        self.assertIsNone(plan)
+        self.assertTrue(any("worktree registry contained an entry without a path" in r for r in reasons))
+
     def test_worktree_registry_read_failure_is_explicit_not_empty(self) -> None:
         _, _, evidence, _ = self.prepare_linked()
         real_git = cleanup.git
@@ -189,11 +220,12 @@ class CleanupToctouTests(unittest.TestCase):
                 return subprocess.CompletedProcess(["git", *args], 1, "registry unavailable\n")
             return real_git(*args, cwd=cwd, check=check)
 
+        import closeout_state
         with patch.object(
             cleanup,
             "remote_repository_identity",
             return_value=("oimus1976/ai-dev-starter", None),
-        ), patch.object(cleanup, "git", side_effect=fail_registry):
+        ), patch.object(closeout_state, "git", side_effect=fail_registry):
             plan, reasons = cleanup.build_plan(
                 self.repo,
                 self.pr_number,
