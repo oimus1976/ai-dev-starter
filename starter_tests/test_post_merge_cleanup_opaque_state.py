@@ -165,5 +165,55 @@ class OpaqueCleanupStateTests(unittest.TestCase):
         self.assertTrue(any("normal topic worktree removal failed" in reason for reason in result.failures))
 
 
+
+
+
+
+
+    def test_topology_determination_failure_blocks_cleanup(self) -> None:
+        linked, head = self.linked_topic()
+        self.merge_result()
+        evidence = self.evidence(head)
+        real_git = cleanup.git
+
+        def fail_topology(*args: str, cwd: Path, check: bool = True):
+            if args[:2] == ("rev-parse", "--path-format=absolute"):
+                return subprocess.CompletedProcess(["git", *args], 1, "fatal: not a git directory\n")
+            return real_git(*args, cwd=cwd, check=check)
+
+        import closeout_state
+        with patch.object(
+            cleanup,
+            "remote_repository_identity",
+            return_value=("oimus1976/ai-dev-starter", None),
+        ), patch.object(closeout_state, "git", side_effect=fail_topology):
+            plan, reasons = self.plan(evidence)
+
+        self.assertIsNone(plan)
+        self.assertTrue(any("could not determine primary vs linked topology for worktree" in r for r in reasons))
+
+
+    def test_topology_determination_partial_failure_blocks_cleanup(self) -> None:
+        linked, head = self.linked_topic()
+        self.merge_result()
+        evidence = self.evidence(head)
+        real_git = cleanup.git
+
+        def fail_topology(*args: str, cwd: Path, check: bool = True):
+            if args[:2] == ("rev-parse", "--path-format=absolute"):
+                if "--git-common-dir" in args:
+                    return subprocess.CompletedProcess(["git", *args], 1, "fatal: not a git directory\n")
+            return real_git(*args, cwd=cwd, check=check)
+
+        import closeout_state
+        with patch.object(
+            cleanup,
+            "remote_repository_identity",
+            return_value=("oimus1976/ai-dev-starter", None),
+        ), patch.object(closeout_state, "git", side_effect=fail_topology):
+            plan, reasons = self.plan(evidence)
+
+        self.assertIsNone(plan)
+        self.assertTrue(any("could not determine primary vs linked topology for worktree" in r for r in reasons))
 if __name__ == "__main__":
     unittest.main()

@@ -119,38 +119,10 @@ def _read_worktrees(repo: Path) -> tuple[list[WorktreeInfo] | None, str | None]:
 
     A failed registry read is never represented as an empty registry.
     """
-    result = git("worktree", "list", "--porcelain", cwd=repo, check=False)
-    if result.returncode != 0:
-        return None, "could not read worktree registry"
-
-    raw_entries: list[dict[str, str]] = []
-    current: dict[str, str] = {}
-    for raw_line in result.stdout.splitlines():
-        if not raw_line:
-            if current:
-                raw_entries.append(current)
-                current = {}
-            continue
-        key, separator, value = raw_line.partition(" ")
-        current[key] = value if separator else ""
-    if current:
-        raw_entries.append(current)
-
-    entries: list[WorktreeInfo] = []
-    for entry in raw_entries:
-        raw_path = entry.get("worktree")
-        if not raw_path:
-            return None, "worktree registry contained an entry without a path"
-        entries.append(
-            WorktreeInfo(
-                path=Path(raw_path).resolve(),
-                branch_ref=entry.get("branch"),
-                head=entry.get("HEAD"),
-                bare="bare" in entry,
-                detached="detached" in entry,
-                prunable="prunable" in entry,
-            )
-        )
+    from closeout_state import list_worktrees
+    entries, err = list_worktrees(repo)
+    if err:
+        return None, err
     return entries, None
 
 
@@ -242,6 +214,10 @@ def build_plan(
     canonical_path: Path | None = None
     if canonical is not None:
         mode = "linked" if target is not None and target.path != canonical.path else "canonical-only"
+
+        if mode == "linked" and target is not None and getattr(target, "is_primary", False):
+            failures.append("primary topic worktree with linked canonical worktree is not safely supported for removal")
+
         canonical_path = canonical.path
         if not canonical.path.is_dir() or canonical.prunable:
             failures.append("canonical worktree registration is stale or unavailable")
@@ -503,8 +479,13 @@ def execute_plan(
             "worktree", "remove", str(plan.target_worktree), cwd=control_repo, check=False
         )
         if result.returncode != 0:
+            diagnostic = result.stdout.strip().split("\n")[0]
+            if diagnostic.startswith("fatal: "):
+                diagnostic = diagnostic[7:]
+            if not diagnostic:
+                diagnostic = "no diagnostic output"
             return _execution_failure(
-                ["normal topic worktree removal failed; no force cleanup was attempted"],
+                [f"normal topic worktree removal failed ({diagnostic}); no force cleanup was attempted"],
                 effects_started,
             )
 

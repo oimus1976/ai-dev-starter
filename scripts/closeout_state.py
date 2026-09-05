@@ -29,6 +29,7 @@ class WorktreeInfo:
     bare: bool = False
     detached: bool = False
     prunable: bool = False
+    is_primary: bool = False
 
 
 def git(*args: str, cwd: Path, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -145,10 +146,10 @@ def cleanup_worktree_failures(worktree: Path, label: str) -> list[str]:
     return failures
 
 
-def list_worktrees(repo: Path) -> list[WorktreeInfo]:
+def list_worktrees(repo: Path) -> tuple[list[WorktreeInfo] | None, str | None]:
     result = git("worktree", "list", "--porcelain", cwd=repo, check=False)
     if result.returncode != 0:
-        return []
+        return None, "could not read worktree registry"
 
     raw_entries: list[dict[str, str]] = []
     current: dict[str, str] = {}
@@ -167,23 +168,57 @@ def list_worktrees(repo: Path) -> list[WorktreeInfo]:
     for entry in raw_entries:
         raw_path = entry.get("worktree")
         if not raw_path:
-            continue
+            return None, "worktree registry contained an entry without a path"
+
+        wt_path = Path(raw_path).resolve()
+        is_primary = False
+        if wt_path.is_dir():
+            git_dir_res = git(
+                "rev-parse",
+                "--path-format=absolute",
+                "--git-dir",
+                cwd=wt_path,
+                check=False,
+            )
+            common_dir_res = git(
+                "rev-parse",
+                "--path-format=absolute",
+                "--git-common-dir",
+                cwd=wt_path,
+                check=False,
+            )
+
+            if git_dir_res.returncode != 0 or common_dir_res.returncode != 0:
+                return None, "could not determine primary vs linked topology for worktree"
+
+            git_dir = Path(git_dir_res.stdout.strip()).resolve()
+            common_dir = Path(common_dir_res.stdout.strip()).resolve()
+
+            gd_raw = git_dir_res.stdout.strip()
+            cd_raw = common_dir_res.stdout.strip()
+
+            if git_dir == common_dir or gd_raw == cd_raw:
+                is_primary = True
+
         entries.append(
             WorktreeInfo(
-                path=Path(raw_path).resolve(),
+                path=wt_path,
                 branch_ref=entry.get("branch"),
                 head=entry.get("HEAD"),
                 bare="bare" in entry,
                 detached="detached" in entry,
                 prunable="prunable" in entry,
+                is_primary=is_primary,
             )
         )
-    return entries
-
+    return entries, None
 
 def worktrees_for_branch(repo: Path, branch: str) -> list[WorktreeInfo]:
     ref = f"refs/heads/{branch}"
-    return [entry for entry in list_worktrees(repo) if entry.branch_ref == ref]
+    entries, _ = list_worktrees(repo)
+    if entries is None:
+        return []
+    return [entry for entry in entries if entry.branch_ref == ref]
 
 
 def canonical_worktree(repo: Path, branch: str) -> Path | None:
