@@ -54,3 +54,8 @@ evidence = "TODO"
 real_boundary_smoke_required = false
 test_matrix_required = false
 exact_head_required_from_level = "HIGH_IMPACT"
+
+[cleanup]
+# Exact repo-relative paths of ignored files/directories that can be safely deleted.
+# No globs, wildcards, or regex. Unknown ignored paths remain blocking by default.
+disposable_ignored_paths = []

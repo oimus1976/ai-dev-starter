@@ -191,3 +191,85 @@ disposable_ignored_paths = ["AMBIGUOUS/"]
             self.assertTrue(any("contains ignored files" in f for f in failures))
         finally:
             closeout_state.git = original_git
+
+    def test_cleanup_deletes_only_exact_disposable_paths(self):
+        profile = '''
+[cleanup]
+disposable_ignored_paths = ["__pycache__/", "disposable.txt"]
+'''
+        repo = setup_repo_with_profile(self.temp_dir, profile)
+
+        pycache = repo / "__pycache__"
+        pycache.mkdir()
+        pyc = pycache / "file.pyc"
+        pyc.write_text("binary")
+
+        disposable_file = repo / "disposable.txt"
+        disposable_file.write_text("text")
+
+        from closeout_state import apply_disposable_cleanup
+        failures = apply_disposable_cleanup(repo)
+
+        self.assertFalse(failures)
+        self.assertFalse(pycache.exists())
+        self.assertFalse(disposable_file.exists())
+
+    def test_cleanup_blocks_unknown_before_deletion(self):
+        profile = '''
+[cleanup]
+disposable_ignored_paths = ["__pycache__/"]
+'''
+        repo = setup_repo_with_profile(self.temp_dir, profile)
+
+        pycache = repo / "__pycache__"
+        pycache.mkdir()
+        (pycache / "file.pyc").write_text("binary")
+
+        unknown = repo / "unknown.txt"
+        unknown.write_text("text")
+
+        from closeout_state import apply_disposable_cleanup
+
+        import closeout_state
+        original_git = closeout_state.git
+        def mocked_git(*args, **kwargs):
+            if args[0] == "status" and "--ignored=matching" in args:
+                class MockResult:
+                    returncode = 0
+                    stdout = "!! __pycache__/\0!! unknown.txt\0"
+                return MockResult()
+            return original_git(*args, **kwargs)
+
+        closeout_state.git = mocked_git
+        try:
+            failures = apply_disposable_cleanup(repo)
+            self.assertTrue(failures)
+            self.assertTrue(pycache.exists())
+            self.assertTrue(unknown.exists())
+        finally:
+            closeout_state.git = original_git
+
+    def test_cleanup_blocks_escaping_path_before_deletion(self):
+        profile = '''
+[cleanup]
+disposable_ignored_paths = ["../outside/"]
+'''
+        repo = setup_repo_with_profile(self.temp_dir, profile)
+
+        from closeout_state import apply_disposable_cleanup
+        import closeout_state
+        original_git = closeout_state.git
+        def mocked_git(*args, **kwargs):
+            if args[0] == "status" and "--ignored=matching" in args:
+                class MockResult:
+                    returncode = 0
+                    stdout = "!! ../outside/\0"
+                return MockResult()
+            return original_git(*args, **kwargs)
+
+        closeout_state.git = mocked_git
+        try:
+            failures = apply_disposable_cleanup(repo)
+            self.assertTrue(failures)
+        finally:
+            closeout_state.git = original_git

@@ -26,6 +26,7 @@ from typing import Callable, Iterator
 from closeout_state import (
     FULL_SHA_RE,
     WorktreeInfo,
+    apply_disposable_cleanup,
     cleanup_worktree_failures,
     git,
     is_ancestor,
@@ -475,6 +476,11 @@ def execute_plan(
                 pre or ["task HEAD changed before worktree removal"], effects_started
             )
         effects_started = True
+
+        del_failures = apply_disposable_cleanup(plan.target_worktree)
+        if del_failures:
+            return _execution_failure(del_failures, effects_started)
+
         result = git(
             "worktree", "remove", str(plan.target_worktree), cwd=control_repo, check=False
         )

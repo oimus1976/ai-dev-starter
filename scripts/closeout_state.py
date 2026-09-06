@@ -110,6 +110,67 @@ def _read_disposable_paths(repo_root: Path) -> set[str]:
 
     return {p for p in paths if isinstance(p, str)}
 
+
+def apply_disposable_cleanup(worktree: Path) -> list[str]:
+    """Remove allowed disposable ignored paths before worktree removal."""
+    import os
+    import shutil
+    failures = []
+
+    ignored = git(
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all",
+        "--ignored=matching",
+        cwd=worktree,
+        check=False,
+    )
+    if ignored.returncode != 0:
+        return ["could not inspect ignored files for cleanup"]
+
+    disposable = _read_disposable_paths(worktree)
+
+    to_delete = []
+    for record in ignored.stdout.split("\0"):
+        if not record or not record.startswith("!! "):
+            continue
+        path = record[3:]
+
+        if path not in disposable:
+            return ["found unknown ignored path during cleanup execution"]
+
+        full_path = (worktree / path)
+        try:
+            resolved = full_path.resolve(strict=True)
+            worktree_resolved = worktree.resolve(strict=True)
+
+            if not str(resolved).startswith(str(worktree_resolved)):
+                return ["disposable path escapes worktree bounds"]
+
+            if full_path.is_symlink() or (hasattr(full_path, "is_junction") and full_path.is_junction()):
+                return ["disposable path is a symlink or junction"]
+
+            os_rel = resolved.relative_to(worktree_resolved)
+            clean_path = path.rstrip("/")
+            if os_rel.as_posix() != clean_path:
+                return ["ambiguous path resolution during cleanup"]
+
+            to_delete.append(full_path)
+        except Exception:
+            return ["failed to safely resolve disposable path for deletion"]
+
+    for target in to_delete:
+        try:
+            if target.is_dir():
+                shutil.rmtree(target)
+            else:
+                target.unlink()
+        except OSError:
+            failures.append(f"could not physically remove disposable path: {target.name}")
+
+    return failures
+
 def cleanup_worktree_failures(worktree: Path, label: str) -> list[str]:
     """Return stricter failures required before cleanup may mutate a worktree.
 
@@ -186,7 +247,7 @@ def cleanup_worktree_failures(worktree: Path, label: str) -> list[str]:
                 clean_path = path.rstrip("/")
 
                 # Check for strict equivalence (including case!)
-                if str(os_rel) != clean_path:
+                if os_rel.as_posix() != clean_path:
                     unknown_ignored = True
                     break
             except Exception:
