@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import subprocess
 from urllib.parse import urlparse
+import tomllib
 
 FULL_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 GIT_OPERATION_MARKERS = (
@@ -90,6 +91,25 @@ def worktree_failures(worktree: Path, label: str) -> list[str]:
     return failures
 
 
+def _read_disposable_paths(repo_root: Path) -> set[str]:
+    profile_path = repo_root / "PROJECT_PROFILE.toml"
+    if not profile_path.is_file():
+        return set()
+    try:
+        with profile_path.open("rb") as f:
+            data = tomllib.load(f)
+    except (tomllib.TOMLDecodeError, OSError):
+        return set()
+
+    cleanup_cfg = data.get("cleanup", {})
+    if not isinstance(cleanup_cfg, dict):
+        return set()
+    paths = cleanup_cfg.get("disposable_ignored_paths", [])
+    if not isinstance(paths, list):
+        return set()
+
+    return {p for p in paths if isinstance(p, str)}
+
 def cleanup_worktree_failures(worktree: Path, label: str) -> list[str]:
     """Return stricter failures required before cleanup may mutate a worktree.
 
@@ -114,10 +134,72 @@ def cleanup_worktree_failures(worktree: Path, label: str) -> list[str]:
     )
     if ignored.returncode != 0:
         failures.append(f"could not inspect ignored files in {label} worktree")
-    elif any(record.startswith("!! ") for record in ignored.stdout.split("\0") if record):
-        failures.append(
-            f"{label} worktree contains ignored files/directories that cleanup could overwrite or delete"
-        )
+    else:
+        disposable = _read_disposable_paths(worktree)
+        unknown_ignored = False
+        import os
+
+        for record in ignored.stdout.split("\0"):
+            if not record:
+                continue
+            if not record.startswith("!! "):
+                continue
+            path = record[3:]
+
+            if path not in disposable:
+                unknown_ignored = True
+                break
+
+            # Path must not escape or be absolute
+            if path.startswith("/") or ".." in path.split("/") or "\\" in path:
+                unknown_ignored = True
+                break
+
+            # Ensure path is real and unambiguous.
+            # Convert worktree and target to absolute resolved paths and compare.
+            full_path = (worktree / path)
+            try:
+                resolved = full_path.resolve(strict=True)
+                worktree_resolved = worktree.resolve(strict=True)
+
+                # Check if it escapes worktree
+                if not str(resolved).startswith(str(worktree_resolved)):
+                    unknown_ignored = True
+                    break
+
+                # Check for symlink/junction by comparing os.path.realpath and absolute path
+                if full_path.is_symlink() or (hasattr(full_path, "is_junction") and full_path.is_junction()):
+                    unknown_ignored = True
+                    break
+
+                # Ambiguous filesystem check: The resolved name must match the expected name case-sensitively
+                # A robust way is to just do `resolved.relative_to(worktree_resolved)`.
+                # If we passed through a symlink or case-insensitive change, relative_to on resolved vs unresolved might diverge
+                # Actually, if we just check that the parts of `path` exactly match the casing of the filesystem,
+                # we can do that by comparing str(full_path.absolute()) and str(resolved)
+                # Note: `resolve()` resolves symlinks. If there are no symlinks, `resolve()` and `absolute()` should be structurally identical except maybe for casing on Windows/macOS.
+
+                # Let's enforce strict case match and no symlinks in any parent directory inside worktree.
+                # `resolved.relative_to(worktree_resolved)` gives the strict OS-resolved relative path.
+                os_rel = resolved.relative_to(worktree_resolved)
+                # Git appends '/' for directories. We strip it from `path` for comparison.
+                clean_path = path.rstrip("/")
+
+                # Check for strict equivalence (including case!)
+                if str(os_rel) != clean_path:
+                    unknown_ignored = True
+                    break
+            except Exception:
+                # If resolve fails (e.g. strict=True but file doesn't exist? Wait, it's an ignored file reported by git, it should exist)
+                # But git can report ignored paths that were just deleted before status was checked (TOCTOU).
+                # To be safe, if we can't resolve it, fail closed.
+                unknown_ignored = True
+                break
+
+        if unknown_ignored:
+            failures.append(
+                f"{label} worktree contains ignored files/directories that cleanup could overwrite or delete"
+            )
 
     index_flags = git("ls-files", "-v", "-z", cwd=worktree, check=False)
     if index_flags.returncode != 0:
