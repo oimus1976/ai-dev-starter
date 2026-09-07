@@ -381,3 +381,17 @@ Topic branch/worktree deletion is not required merely because a PR merged. The v
 If local closeout fails, preserve intentional local work first. Report the unresolved local state and remediate it explicitly; do not convert a failed closeout check into permission for destructive cleanup.
 
 A task may be **merged but locally not closed out**. Keep those facts distinct in completion summaries.
+
+## 23. Repository-wide branch cleanup is a separate destructive gate
+
+Repository-wide remote branch cleanup is distinct from post-merge local closeout for one PR. Current branch existence and PR state on GitHub are authoritative for remote cleanup; chat history, prior agent summaries, stale local remote-tracking refs, and prior cleanup output are not.
+
+Keep inventory, classification, deletion planning, destructive execution, authoritative post-delete verification, and final local pruning as separate phases. At minimum distinguish current GitHub branches from historical merged PR heads; only their current intersection is eligible for automatic merged-branch deletion.
+
+Closed-unmerged PR branches are never bulk-delete candidates. Review their close/superseded rationale, replacement PR state, main comparison, and unique evidence/content individually before creating an exact human-reviewed deletion target. A branch with no PR is also not automatically orphaned; review whether it is a long-lived operational branch.
+
+For native tools such as `git` and `gh`, process exit status is the command success authority. stderr is diagnostic evidence only and may contain normal successful progress/status output. Preserve complex arguments as exact argv rather than relying on shell or Windows PowerShell re-parsing when quoting matters.
+
+A successful delete command does not complete the gate. Refetch authoritative GitHub branches and require the exact target set to have zero residual members. Only after remote cleanup is verified may local remote-tracking refs be pruned and stale local branches reviewed separately.
+
+Use `scripts/branch_cleanup_audit.py` where available and follow `docs/branch-cleanup-policy.md`. Protected/default branches and explicitly retained long-lived branches are never automatic cleanup targets. Uncertainty about classification, branch identity, effect result, or post-delete existence blocks rather than widening destructive authority.
