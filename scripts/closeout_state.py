@@ -251,30 +251,18 @@ def cleanup_worktree_failures(worktree: Path, label: str) -> list[str]:
                 resolved = full_path.resolve(strict=True)
                 worktree_resolved = worktree.resolve(strict=True)
 
-                # Check if it escapes worktree
-                if not str(resolved).startswith(str(worktree_resolved)):
-                    unknown_ignored = True
-                    break
-
                 # Check for symlink/junction by comparing os.path.realpath and absolute path
                 if full_path.is_symlink() or (hasattr(full_path, "is_junction") and full_path.is_junction()):
                     unknown_ignored = True
                     break
 
-                # Ambiguous filesystem check: The resolved name must match the expected name case-sensitively
-                # A robust way is to just do `resolved.relative_to(worktree_resolved)`.
-                # If we passed through a symlink or case-insensitive change, relative_to on resolved vs unresolved might diverge
-                # Actually, if we just check that the parts of `path` exactly match the casing of the filesystem,
-                # we can do that by comparing str(full_path.absolute()) and str(resolved)
-                # Note: `resolve()` resolves symlinks. If there are no symlinks, `resolve()` and `absolute()` should be structurally identical except maybe for casing on Windows/macOS.
+                try:
+                    os_rel = resolved.relative_to(worktree_resolved)
+                except ValueError:
+                    unknown_ignored = True
+                    break
 
-                # Let's enforce strict case match and no symlinks in any parent directory inside worktree.
-                # `resolved.relative_to(worktree_resolved)` gives the strict OS-resolved relative path.
-                os_rel = resolved.relative_to(worktree_resolved)
-                # Git appends '/' for directories. We strip it from `path` for comparison.
                 clean_path = path.rstrip("/")
-
-                # Check for strict equivalence (including case!)
                 if os_rel.as_posix() != clean_path:
                     unknown_ignored = True
                     break
