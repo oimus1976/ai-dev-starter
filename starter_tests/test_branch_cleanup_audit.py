@@ -53,6 +53,7 @@ class ClassificationTests(unittest.TestCase):
         self.assertEqual(
             audit.classify_branch(
                 "orchestration",
+                "abc",
                 [],
                 default_branch="main",
                 retained=set(),
@@ -64,6 +65,7 @@ class ClassificationTests(unittest.TestCase):
         self.assertEqual(
             audit.classify_branch(
                 "orchestration",
+                "abc",
                 [],
                 default_branch="main",
                 retained={"orchestration"},
@@ -75,6 +77,7 @@ class ClassificationTests(unittest.TestCase):
         self.assertEqual(
             audit.classify_branch(
                 "main",
+                "abc",
                 [],
                 default_branch="main",
                 retained=set(),
@@ -83,20 +86,51 @@ class ClassificationTests(unittest.TestCase):
         )
 
     def test_merged_open_and_closed_unmerged_are_distinct(self):
-        merged = [{"state": "closed", "merged_at": "2026-09-01T00:00:00Z"}]
-        opened = [{"state": "open", "merged_at": None}]
-        closed = [{"state": "closed", "merged_at": None}]
+        merged = [
+            {
+                "state": "closed",
+                "merged_at": "2026-09-01T00:00:00Z",
+                "head": {"sha": "merged-sha"},
+            }
+        ]
+        opened = [{"state": "open", "merged_at": None, "head": {"sha": "open-sha"}}]
+        closed = [{"state": "closed", "merged_at": None, "head": {"sha": "closed-sha"}}]
         self.assertEqual(
-            audit.classify_branch("merged", merged, default_branch="main", retained=set()),
+            audit.classify_branch(
+                "merged", "merged-sha", merged, default_branch="main", retained=set()
+            ),
             audit.CLASS_MERGED,
         )
         self.assertEqual(
-            audit.classify_branch("open", opened, default_branch="main", retained=set()),
+            audit.classify_branch(
+                "open", "open-sha", opened, default_branch="main", retained=set()
+            ),
             audit.CLASS_OPEN,
         )
         self.assertEqual(
-            audit.classify_branch("closed", closed, default_branch="main", retained=set()),
+            audit.classify_branch(
+                "closed", "closed-sha", closed, default_branch="main", retained=set()
+            ),
             audit.CLASS_CLOSED,
+        )
+
+    def test_historical_merged_name_with_moved_current_sha_requires_review(self):
+        prs = [
+            {
+                "state": "closed",
+                "merged_at": "2026-09-01T00:00:00Z",
+                "head": {"sha": "old-merged-sha"},
+            }
+        ]
+        self.assertEqual(
+            audit.classify_branch(
+                "reused-topic",
+                "new-current-sha",
+                prs,
+                default_branch="main",
+                retained=set(),
+            ),
+            audit.CLASS_MERGED_MOVED,
         )
 
 
@@ -123,6 +157,12 @@ class ApiAndDeletionTests(unittest.TestCase):
                     "sha": "a",
                     "classification": audit.CLASS_MERGED,
                     "pull_requests": [{"number": 1}],
+                },
+                {
+                    "branch": "same-name-but-moved",
+                    "sha": "b",
+                    "classification": audit.CLASS_MERGED_MOVED,
+                    "pull_requests": [{"number": 2}],
                 },
             ]
         }
