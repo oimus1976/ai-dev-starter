@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -96,13 +97,9 @@ def detect_repository(explicit: str | None) -> str:
     return repository
 
 
-def api_json(endpoint: str, *, method: str = "GET") -> Any:
-    args = ["api"]
-    if method != "GET":
-        args += ["--method", method]
-    args.append(endpoint)
-    result = run_gh(args)
-    text = require_ok(result, f"gh api {method} {endpoint}")
+def api_json(endpoint: str) -> Any:
+    result = run_gh(["api", endpoint])
+    text = require_ok(result, f"gh api GET {endpoint}")
     if not text.strip():
         return None
     return parse_json(text, endpoint)
@@ -137,16 +134,27 @@ def repository_default_branch(repository: str) -> str:
     return branch
 
 
-def branch_map(repository: str) -> dict[str, str]:
-    result: dict[str, str] = {}
+def branch_records(repository: str) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
     for item in paged_list(repository, "branches"):
         name = item.get("name")
         commit = item.get("commit")
         sha = commit.get("sha") if isinstance(commit, dict) else None
-        if not isinstance(name, str) or not name or not isinstance(sha, str) or not sha:
-            raise AuditError("branch response omitted name or commit SHA")
-        result[name] = sha
+        protected = item.get("protected")
+        if (
+            not isinstance(name, str)
+            or not name
+            or not isinstance(sha, str)
+            or not sha
+            or not isinstance(protected, bool)
+        ):
+            raise AuditError("branch response omitted name, commit SHA, or protected state")
+        result[name] = {"sha": sha, "protected": protected}
     return result
+
+
+def branch_map(repository: str) -> dict[str, str]:
+    return {name: record["sha"] for name, record in branch_records(repository).items()}
 
 
 def pull_map(repository: str) -> dict[str, list[dict[str, Any]]]:
@@ -154,6 +162,10 @@ def pull_map(repository: str) -> dict[str, list[dict[str, Any]]]:
     for pr in paged_list(repository, "pulls", state="all"):
         head = pr.get("head")
         ref = head.get("ref") if isinstance(head, dict) else None
+        head_repo = head.get("repo") if isinstance(head, dict) else None
+        head_repo_name = head_repo.get("full_name") if isinstance(head_repo, dict) else None
+        if head_repo_name != repository:
+            continue
         if isinstance(ref, str) and ref:
             mapped.setdefault(ref, []).append(pr)
     return mapped
@@ -172,8 +184,9 @@ def classify_branch(
     *,
     default_branch: str,
     retained: set[str],
+    github_protected: bool = False,
 ) -> str:
-    if branch == default_branch:
+    if branch == default_branch or github_protected:
         return CLASS_PROTECTED
     if branch in retained:
         return CLASS_RETAINED
@@ -213,21 +226,24 @@ def compact_prs(prs: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def build_inventory(repository: str, retained: set[str]) -> dict[str, Any]:
     default_branch = repository_default_branch(repository)
-    branches = branch_map(repository)
+    branches = branch_records(repository)
     prs = pull_map(repository)
     rows: list[dict[str, Any]] = []
-    for branch, sha in sorted(branches.items()):
+    for branch, record in sorted(branches.items()):
+        sha = record["sha"]
         branch_prs = prs.get(branch, [])
         rows.append(
             {
                 "branch": branch,
                 "sha": sha,
+                "github_protected": record["protected"],
                 "classification": classify_branch(
                     branch,
                     sha,
                     branch_prs,
                     default_branch=default_branch,
                     retained=retained,
+                    github_protected=record["protected"],
                 ),
                 "pull_requests": compact_prs(branch_prs),
             }
@@ -309,9 +325,33 @@ def validate_reviewed_targets(
     return validated
 
 
-def delete_branch(repository: str, branch: str) -> None:
-    encoded = quote(branch, safe="")
-    api_json(f"repos/{repository}/git/refs/heads/{encoded}", method="DELETE")
+def origin_repository() -> str:
+    result = run_native(["git", "remote", "get-url", "origin"])
+    url = require_ok(result, "git origin lookup").strip()
+    patterns = (
+        r"https?://github\.com/([^/]+)/([^/]+?)(?:\.git)?$",
+        r"ssh://git@github\.com/([^/]+)/([^/]+?)(?:\.git)?$",
+        r"git@github\.com:([^/]+)/([^/]+?)(?:\.git)?$",
+    )
+    for pattern in patterns:
+        match = re.fullmatch(pattern, url)
+        if match:
+            return f"{match.group(1)}/{match.group(2)}"
+    raise AuditError("origin is not a recognized github.com OWNER/REPO remote")
+
+
+def ensure_origin_matches(repository: str) -> None:
+    observed = origin_repository()
+    if observed.casefold() != repository.casefold():
+        raise AuditError(f"origin repository mismatch: expected {repository}, got {observed}")
+
+
+def delete_branch_with_lease(branch: str, expected_sha: str) -> NativeResult:
+    lease = f"--force-with-lease=refs/heads/{branch}:{expected_sha}"
+    refspec = f":refs/heads/{branch}"
+    result = run_native(["git", "push", lease, "origin", refspec])
+    require_ok(result, f"exact-lease delete {branch}")
+    return result
 
 
 def execute_deletion(
@@ -326,6 +366,7 @@ def execute_deletion(
         raise AuditError("deletion target set contains duplicates")
     if any(name in retained for name in target_names):
         raise AuditError("deletion target intersects retained branches")
+    ensure_origin_matches(repository)
 
     results: list[dict[str, Any]] = []
     for row in targets:
@@ -338,8 +379,15 @@ def execute_deletion(
                 f"pre-effect branch identity changed for {branch}: expected {expected_sha}, got {current_sha}"
             )
         try:
-            delete_branch(repository, branch)
-            results.append({"branch": branch, "expected_sha": expected_sha, "result": "DELETE_EXIT_0"})
+            native = delete_branch_with_lease(branch, expected_sha)
+            results.append(
+                {
+                    "branch": branch,
+                    "expected_sha": expected_sha,
+                    "result": "DELETE_EXIT_0",
+                    "stderr": native.stderr,
+                }
+            )
         except AuditError as exc:
             results.append(
                 {
@@ -398,7 +446,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     group.add_argument(
         "--delete-merged",
         action="store_true",
-        help="target only current branches whose exact current SHA matches a merged PR head",
+        help="target only current branches whose exact current SHA matches a merged same-repository PR head",
     )
     group.add_argument(
         "--delete-reviewed",
