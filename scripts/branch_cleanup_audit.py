@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 import tempfile
@@ -24,6 +23,7 @@ from urllib.parse import quote
 
 CLASS_PROTECTED = "PROTECTED"
 CLASS_MERGED = "MERGED_DELETE_CANDIDATE"
+CLASS_MERGED_MOVED = "MERGED_HEAD_MOVED_REVIEW_REQUIRED"
 CLASS_OPEN = "OPEN_PR"
 CLASS_CLOSED = "CLOSED_UNMERGED_REVIEW_REQUIRED"
 CLASS_NO_PR = "NO_PR_REVIEW_REQUIRED"
@@ -159,8 +159,15 @@ def pull_map(repository: str) -> dict[str, list[dict[str, Any]]]:
     return mapped
 
 
+def pr_head_sha(pr: dict[str, Any]) -> str | None:
+    head = pr.get("head")
+    sha = head.get("sha") if isinstance(head, dict) else None
+    return sha if isinstance(sha, str) and sha else None
+
+
 def classify_branch(
     branch: str,
+    current_sha: str,
     prs: Iterable[dict[str, Any]],
     *,
     default_branch: str,
@@ -176,8 +183,13 @@ def classify_branch(
         return CLASS_NO_PR
     if any(pr.get("state") == "open" for pr in prs):
         return CLASS_OPEN
-    if any(pr.get("merged_at") is not None for pr in prs):
+
+    merged = [pr for pr in prs if pr.get("merged_at") is not None]
+    if any(pr_head_sha(pr) == current_sha for pr in merged):
         return CLASS_MERGED
+    if merged:
+        return CLASS_MERGED_MOVED
+
     if all(pr.get("state") == "closed" and pr.get("merged_at") is None for pr in prs):
         return CLASS_CLOSED
     return CLASS_CLOSED
@@ -191,6 +203,7 @@ def compact_prs(prs: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
                 "number": pr.get("number"),
                 "state": pr.get("state"),
                 "merged_at": pr.get("merged_at"),
+                "head_sha": pr_head_sha(pr),
                 "title": pr.get("title"),
                 "html_url": pr.get("html_url"),
             }
@@ -211,6 +224,7 @@ def build_inventory(repository: str, retained: set[str]) -> dict[str, Any]:
                 "sha": sha,
                 "classification": classify_branch(
                     branch,
+                    sha,
                     branch_prs,
                     default_branch=default_branch,
                     retained=retained,
@@ -360,6 +374,7 @@ def print_summary(inventory: dict[str, Any], audit_dir: Path) -> None:
         CLASS_PROTECTED,
         CLASS_RETAINED,
         CLASS_MERGED,
+        CLASS_MERGED_MOVED,
         CLASS_OPEN,
         CLASS_CLOSED,
         CLASS_NO_PR,
@@ -383,7 +398,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     group.add_argument(
         "--delete-merged",
         action="store_true",
-        help="target only current branches whose PR is already merged",
+        help="target only current branches whose exact current SHA matches a merged PR head",
     )
     group.add_argument(
         "--delete-reviewed",
