@@ -170,6 +170,28 @@ class PullMappingTests(unittest.TestCase):
 
 
 class ApiAndDeletionTests(unittest.TestCase):
+    def merged_inventory(self, *, include_topic=True, topic_classification=None):
+        rows = [
+            {
+                "branch": "main",
+                "sha": "main-sha",
+                "classification": audit.CLASS_PROTECTED,
+                "github_protected": True,
+                "pull_requests": [],
+            }
+        ]
+        if include_topic:
+            rows.append(
+                {
+                    "branch": "topic",
+                    "sha": "abc",
+                    "classification": topic_classification or audit.CLASS_MERGED,
+                    "github_protected": False,
+                    "pull_requests": [{"number": 1}],
+                }
+            )
+        return {"branches": rows}
+
     def test_partial_prior_deletion_only_targets_present_exact_merged_heads(self):
         inventory = {
             "branches": [
@@ -215,40 +237,46 @@ class ApiAndDeletionTests(unittest.TestCase):
                 [{"branch": "old-topic", "expected_sha": "old"}],
             )
 
-    def test_https_origin_repository_is_parsed(self):
-        result = audit.NativeResult(
-            ("git", "remote", "get-url", "origin"),
-            0,
-            "https://github.com/oimus/repo.git\n",
-            "",
+    def test_parse_supported_github_origins(self):
+        self.assertEqual(
+            audit.parse_github_repository("https://github.com/oimus/repo.git"), "oimus/repo"
         )
-        with mock.patch.object(audit, "run_native", return_value=result):
-            self.assertEqual(audit.origin_repository(), "oimus/repo")
-
-    def test_scp_origin_repository_is_parsed(self):
-        result = audit.NativeResult(
-            ("git", "remote", "get-url", "origin"),
-            0,
-            "git@github.com:oimus/repo.git\n",
-            "",
+        self.assertEqual(
+            audit.parse_github_repository("git@github.com:oimus/repo.git"), "oimus/repo"
         )
-        with mock.patch.object(audit, "run_native", return_value=result):
-            self.assertEqual(audit.origin_repository(), "oimus/repo")
+        self.assertEqual(
+            audit.parse_github_repository("ssh://git@github.com/oimus/repo.git"), "oimus/repo"
+        )
 
     def test_unrecognized_origin_blocks(self):
-        result = audit.NativeResult(
-            ("git", "remote", "get-url", "origin"),
-            0,
-            "https://example.invalid/oimus/repo.git\n",
-            "",
-        )
-        with mock.patch.object(audit, "run_native", return_value=result):
-            with self.assertRaisesRegex(audit.AuditError, "recognized github.com"):
-                audit.origin_repository()
+        with self.assertRaisesRegex(audit.AuditError, "recognized github.com"):
+            audit.parse_github_repository("https://example.invalid/oimus/repo.git")
 
-    def test_origin_mismatch_blocks(self):
-        with mock.patch.object(audit, "origin_repository", return_value="other/repo"):
-            with self.assertRaisesRegex(audit.AuditError, "origin repository mismatch"):
+    def test_fetch_or_push_origin_mismatch_blocks(self):
+        with mock.patch.object(
+            audit,
+            "remote_urls",
+            side_effect=[
+                ["https://github.com/oimus/repo.git"],
+                ["https://github.com/other/repo.git"],
+            ],
+        ):
+            with self.assertRaisesRegex(audit.AuditError, "push repository mismatch"):
+                audit.ensure_origin_matches("oimus/repo")
+
+    def test_multiple_push_urls_block(self):
+        with mock.patch.object(
+            audit,
+            "remote_urls",
+            side_effect=[
+                ["https://github.com/oimus/repo.git"],
+                [
+                    "https://github.com/oimus/repo.git",
+                    "https://github.com/oimus/mirror.git",
+                ],
+            ],
+        ):
+            with self.assertRaisesRegex(audit.AuditError, "exactly one fetch URL and one push URL"):
                 audit.ensure_origin_matches("oimus/repo")
 
     def test_exact_lease_delete_preserves_slash_hash_and_accepts_success_stderr(self):
@@ -274,22 +302,103 @@ class ApiAndDeletionTests(unittest.TestCase):
             with self.assertRaisesRegex(audit.AuditError, "exit 1"):
                 audit.delete_branch_with_lease("topic", "abc")
 
-    def test_post_delete_residual_is_blocking(self):
-        targets = [{"branch": "topic", "sha": "abc"}]
+    def test_pre_effect_classification_change_blocks_before_first_delete(self):
+        target = {
+            "branch": "topic",
+            "sha": "abc",
+            "classification": audit.CLASS_MERGED,
+        }
+        pre = self.merged_inventory()
+        fresh = self.merged_inventory(topic_classification=audit.CLASS_OPEN)
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch.object(
+            audit, "ensure_origin_matches"
+        ), mock.patch.object(
+            audit, "build_inventory", side_effect=[pre, fresh]
+        ), mock.patch.object(
+            audit, "delete_branch_with_lease"
+        ) as delete:
+            with self.assertRaisesRegex(audit.AuditError, "classification changed") as raised:
+                audit.execute_deletion(
+                    "oimus/repo", [target], retained=set(), audit_dir=Path(temp_dir)
+                )
+            self.assertNotIsInstance(raised.exception, audit.AuditIncompleteError)
+            delete.assert_not_called()
+
+    def test_state_change_after_first_delete_is_incomplete(self):
+        targets = [
+            {"branch": "one", "sha": "1", "classification": audit.CLASS_MERGED},
+            {"branch": "two", "sha": "2", "classification": audit.CLASS_MERGED},
+        ]
+        pre = {
+            "branches": [
+                {"branch": "main", "sha": "m", "classification": audit.CLASS_PROTECTED},
+                {"branch": "one", "sha": "1", "classification": audit.CLASS_MERGED},
+                {"branch": "two", "sha": "2", "classification": audit.CLASS_MERGED},
+            ]
+        }
+        fresh_one = pre
+        fresh_two_changed = {
+            "branches": [
+                {"branch": "main", "sha": "m", "classification": audit.CLASS_PROTECTED},
+                {"branch": "two", "sha": "2", "classification": audit.CLASS_OPEN},
+            ]
+        }
         success = audit.NativeResult((), 0, "", "normal success stderr")
         with tempfile.TemporaryDirectory() as temp_dir, mock.patch.object(
             audit, "ensure_origin_matches"
         ), mock.patch.object(
-            audit, "branch_map", side_effect=[{"topic": "abc"}, {"topic": "abc"}]
+            audit, "build_inventory", side_effect=[pre, fresh_one, fresh_two_changed]
+        ), mock.patch.object(
+            audit, "delete_branch_with_lease", return_value=success
+        ) as delete:
+            with self.assertRaisesRegex(audit.AuditIncompleteError, "classification changed"):
+                audit.execute_deletion(
+                    "oimus/repo", targets, retained=set(), audit_dir=Path(temp_dir)
+                )
+            delete.assert_called_once_with("one", "1")
+
+    def test_post_delete_residual_is_incomplete(self):
+        target = {
+            "branch": "topic",
+            "sha": "abc",
+            "classification": audit.CLASS_MERGED,
+        }
+        pre = self.merged_inventory()
+        fresh = self.merged_inventory()
+        after = self.merged_inventory()
+        success = audit.NativeResult((), 0, "", "normal success stderr")
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch.object(
+            audit, "ensure_origin_matches"
+        ), mock.patch.object(
+            audit, "build_inventory", side_effect=[pre, fresh, after]
         ), mock.patch.object(
             audit, "delete_branch_with_lease", return_value=success
         ):
-            with self.assertRaisesRegex(audit.AuditError, "residual"):
+            with self.assertRaisesRegex(audit.AuditIncompleteError, "residual"):
                 audit.execute_deletion(
-                    "oimus/repo",
-                    targets,
-                    retained=set(),
-                    audit_dir=Path(temp_dir),
+                    "oimus/repo", [target], retained=set(), audit_dir=Path(temp_dir)
+                )
+
+    def test_missing_protected_branch_after_delete_is_incomplete(self):
+        target = {
+            "branch": "topic",
+            "sha": "abc",
+            "classification": audit.CLASS_MERGED,
+        }
+        pre = self.merged_inventory()
+        fresh = self.merged_inventory()
+        after = {"branches": []}
+        success = audit.NativeResult((), 0, "", "normal success stderr")
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch.object(
+            audit, "ensure_origin_matches"
+        ), mock.patch.object(
+            audit, "build_inventory", side_effect=[pre, fresh, after]
+        ), mock.patch.object(
+            audit, "delete_branch_with_lease", return_value=success
+        ):
+            with self.assertRaisesRegex(audit.AuditIncompleteError, "protected/retained branches missing"):
+                audit.execute_deletion(
+                    "oimus/repo", [target], retained=set(), audit_dir=Path(temp_dir)
                 )
 
     def test_retained_branch_cannot_be_deleted_before_origin_lookup(self):
@@ -299,7 +408,13 @@ class ApiAndDeletionTests(unittest.TestCase):
             with self.assertRaisesRegex(audit.AuditError, "retained"):
                 audit.execute_deletion(
                     "oimus/repo",
-                    [{"branch": "orchestration", "sha": "abc"}],
+                    [
+                        {
+                            "branch": "orchestration",
+                            "sha": "abc",
+                            "classification": audit.CLASS_MERGED,
+                        }
+                    ],
                     retained={"orchestration"},
                     audit_dir=Path(temp_dir),
                 )
