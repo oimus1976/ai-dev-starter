@@ -9,7 +9,7 @@ The local post-merge helper answers whether one merged PR's worktree can be reti
 Remote cleanup is a protected destructive effect. Keep these phases separate:
 
 1. **inventory** — read current GitHub branches and PR state; no mutation;
-2. **classify** — distinguish protected, retained, merged-present, open, closed-unmerged, and no-PR branches;
+2. **classify** — distinguish protected, retained, merged-present, moved/reused merged-name, open, closed-unmerged, and no-PR branches;
 3. **plan** — construct an exact deletion target set;
 4. **execute** — re-read mutable state and delete only the authorized exact targets;
 5. **verify remote** — refetch GitHub branches and require zero residual targets;
@@ -21,11 +21,11 @@ Do not combine classification and destructive mutation into one opaque step.
 
 For a repository, model at least:
 
-- `R`: branches that currently exist on GitHub;
-- `M`: unique branch names used as heads of merged PRs;
-- `C = R ∩ M`: merged PR heads that still currently exist.
+- `R`: `(branch name, current SHA)` pairs that currently exist on GitHub;
+- `M`: `(head ref, head SHA)` pairs of merged PRs;
+- `C = R ∩ M`: current branch identities whose exact current SHA is the head SHA of a merged PR.
 
-Only `C` is eligible for automatic merged-branch deletion. A historical merged PR head that is already absent is not a deletion target.
+Only `C` is eligible for automatic merged-branch deletion. Matching a historical merged PR by branch name alone is insufficient: the branch may have been reused or moved after the merge. A historical merged PR head that is already absent is not a deletion target.
 
 Conversation history, agent summaries, prior script output, or stale `origin/*` refs are not authority for whether a remote branch currently exists.
 
@@ -35,7 +35,8 @@ Use explicit states rather than a generic stale/clean boolean:
 
 - `PROTECTED` — default/canonical branch or another explicit protected branch;
 - `RETAINED_LONG_LIVED` — intentionally retained operational/long-lived branch;
-- `MERGED_DELETE_CANDIDATE` — current GitHub branch with at least one merged PR;
+- `MERGED_DELETE_CANDIDATE` — current GitHub branch whose exact current SHA matches a merged PR head SHA for the same ref;
+- `MERGED_HEAD_MOVED_REVIEW_REQUIRED` — branch name has merged PR history but current SHA no longer matches any merged head SHA;
 - `OPEN_PR` — branch associated with an open PR;
 - `CLOSED_UNMERGED_REVIEW_REQUIRED` — closed PR branch with no merged PR;
 - `NO_PR_REVIEW_REQUIRED` — current branch with no PR evidence.
@@ -56,6 +57,10 @@ Only after human review may such a branch become an explicit deletion target.
 
 No PR does not mean orphaned. Compare the branch to main and inspect its purpose/content. Long-lived operational branches must be explicitly retained.
 
+### Moved or reused merged-name branches
+
+A current branch whose name appears in merged PR history but whose current SHA differs from every merged PR head SHA is never an automatic merged-delete target. Treat it as review-required because it may contain post-merge or reused-branch work.
+
 ## Native command semantics
 
 For `git`, `gh`, and other native tools, process exit status is the success/failure authority. stderr is diagnostic evidence only.
@@ -66,11 +71,11 @@ When complex arguments matter, avoid shell re-parsing. In particular, Windows Po
 
 ## Deletion requirements
 
-A deletion plan must contain exact current branch identities, including expected SHA when the target was manually reviewed.
+A deletion plan must contain exact current branch identities. Automatic merged deletion requires the current branch SHA to equal the merged PR's head SHA. Human-reviewed closed-unmerged deletion requires an explicit expected SHA in the reviewed manifest.
 
 Immediately before a destructive effect, re-read the branch and require the exact expected identity. A moved or missing reviewed branch blocks rather than silently changing the target set.
 
-`MERGED_DELETE_CANDIDATE` may be selected automatically from the current authoritative inventory. `CLOSED_UNMERGED_REVIEW_REQUIRED` requires a human-reviewed exact target manifest. `OPEN_PR`, `NO_PR_REVIEW_REQUIRED`, `PROTECTED`, and `RETAINED_LONG_LIVED` are never automatic delete targets.
+`MERGED_DELETE_CANDIDATE` may be selected automatically from the current authoritative inventory. `CLOSED_UNMERGED_REVIEW_REQUIRED` requires a human-reviewed exact target manifest. `MERGED_HEAD_MOVED_REVIEW_REQUIRED`, `OPEN_PR`, `NO_PR_REVIEW_REQUIRED`, `PROTECTED`, and `RETAINED_LONG_LIVED` are never automatic delete targets.
 
 ## Post-delete verification
 
@@ -117,7 +122,7 @@ for inventory only. Explicit long-lived branches can be retained in the classifi
 python scripts/branch_cleanup_audit.py --retain orchestration
 ```
 
-Plan deletion of current merged PR heads:
+Plan deletion of current merged PR heads whose exact identity still matches the merged PR head:
 
 ```text
 python scripts/branch_cleanup_audit.py --delete-merged
@@ -152,7 +157,7 @@ and execute only after the plan is accepted:
 python scripts/branch_cleanup_audit.py --delete-reviewed reviewed.json --execute
 ```
 
-The helper uses authenticated `gh` reads/writes, Python JSON parsing, argv-preserving native invocation, exact-SHA pre-effect checks for reviewed targets, and authoritative post-delete residual verification.
+The helper uses authenticated `gh` reads/writes, Python JSON parsing, argv-preserving native invocation, exact merged-head identity classification, exact-SHA pre-effect checks for reviewed targets, and authoritative post-delete residual verification.
 
 ## Relationship to other closeout tooling
 
