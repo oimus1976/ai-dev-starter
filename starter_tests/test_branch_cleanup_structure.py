@@ -25,11 +25,16 @@ class BranchCleanupStructureTests(unittest.TestCase):
         self.assertIn("scripts/branch_cleanup_audit.py", text)
         self.assertIn('test_branch_cleanup_audit.py', text)
 
-    def test_policy_document_keeps_cleanup_tools_separate(self):
+    def test_policy_document_keeps_cleanup_tools_and_authority_separate(self):
         text = (ROOT / "docs/branch-cleanup-policy.md").read_text(encoding="utf-8")
         self.assertIn("verify_local_closeout.py", text)
         self.assertIn("post_merge_cleanup.py", text)
         self.assertIn("branch_cleanup_audit.py", text)
+        self.assertIn("same repository being cleaned", text)
+        self.assertIn("fork PR using the same `head.ref` never authorizes deletion", text)
+        self.assertIn("GitHub currently reports as protected", text)
+        self.assertIn("exact current SHA", text)
+        self.assertIn("--force-with-lease=refs/heads/<branch>:<expected_sha>", text)
         self.assertIn("Do not substitute one tool's successful result", text)
 
 
