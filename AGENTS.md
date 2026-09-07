@@ -114,3 +114,17 @@ Remote topic deletion is a stronger optional effect and is off by default. Use `
 `--execute` re-reads authority and mutable Git state rather than trusting a prior plan. Worktree-registry authorization and local-ref postconditions must come from successful reads; read failure is never equivalent to an empty registry/ref set. A pre-effect failure is `SAFE CLEANUP: BLOCKED` and performs no cleanup. A failure after an authorized effect has already completed or an effect command has begun is `SAFE CLEANUP: INCOMPLETE`; report the partial/ambiguous state and stop rather than attempting force recovery.
 
 If either verifier or cleanup blocks, preserve intentional local work and report the unresolved state. Canonical branch/worktree and unrelated worktrees/refs are never cleanup targets.
+
+## Repository-wide branch cleanup
+
+Repository-wide remote branch cleanup is a separate destructive phase from one-PR local closeout. Use current GitHub branch existence and PR state as the authority; do not infer remote existence from chat history, stale `origin/*` refs, or prior cleanup output.
+
+Use `scripts/branch_cleanup_audit.py` and follow `docs/branch-cleanup-policy.md`.
+
+The default run is inventory-only. Keep classification separate from mutation. Automatic deletion is limited to the current-GitHub intersection of branches and merged PR heads. Closed-unmerged branches require individual human review and an exact branch+SHA manifest. No-PR branches require explicit review for long-lived/operational intent; they are not automatic orphan candidates.
+
+For native `git`/`gh` commands, exit status is authoritative for command success. stderr is diagnostic output only and may contain normal success/progress text. Avoid shell/PowerShell argument re-parsing for complex expressions when exact argv matters.
+
+A successful delete command is not completion evidence. After deletion, refetch GitHub branches and require zero residual target branches. Only after remote verification may local remote-tracking refs be pruned and stale local branches reviewed separately.
+
+Protected/default branches and explicitly retained long-lived branches are never automatic cleanup targets. If classification, branch identity, deletion result, or post-delete existence is uncertain, stop rather than widening deletion authority.
