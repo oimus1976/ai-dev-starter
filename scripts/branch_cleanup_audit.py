@@ -44,7 +44,11 @@ class NativeResult:
 
 
 class AuditError(RuntimeError):
-    pass
+    """Failure before any protected cleanup effect begins."""
+
+
+class AuditIncompleteError(AuditError):
+    """Failure after a cleanup effect command began or completed."""
 
 
 def run_native(args: Sequence[str], *, cwd: Path | None = None) -> NativeResult:
@@ -325,9 +329,17 @@ def validate_reviewed_targets(
     return validated
 
 
-def origin_repository() -> str:
-    result = run_native(["git", "remote", "get-url", "origin"])
-    url = require_ok(result, "git origin lookup").strip()
+def remote_urls(*, push: bool) -> list[str]:
+    args = ["git", "remote", "get-url"]
+    if push:
+        args.append("--push")
+    args += ["--all", "origin"]
+    result = run_native(args)
+    text = require_ok(result, "git origin push URL lookup" if push else "git origin fetch URL lookup")
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def parse_github_repository(url: str) -> str:
     patterns = (
         r"https?://github\.com/([^/]+)/([^/]+?)(?:\.git)?$",
         r"ssh://git@github\.com/([^/]+)/([^/]+?)(?:\.git)?$",
@@ -337,13 +349,22 @@ def origin_repository() -> str:
         match = re.fullmatch(pattern, url)
         if match:
             return f"{match.group(1)}/{match.group(2)}"
-    raise AuditError("origin is not a recognized github.com OWNER/REPO remote")
+    raise AuditError("origin URL is not a recognized github.com OWNER/REPO remote")
 
 
 def ensure_origin_matches(repository: str) -> None:
-    observed = origin_repository()
-    if observed.casefold() != repository.casefold():
-        raise AuditError(f"origin repository mismatch: expected {repository}, got {observed}")
+    fetch_urls = remote_urls(push=False)
+    push_urls = remote_urls(push=True)
+    if len(fetch_urls) != 1 or len(push_urls) != 1:
+        raise AuditError(
+            "origin must resolve to exactly one fetch URL and one push URL before branch deletion"
+        )
+    fetch_repo = parse_github_repository(fetch_urls[0])
+    push_repo = parse_github_repository(push_urls[0])
+    if fetch_repo.casefold() != repository.casefold():
+        raise AuditError(f"origin fetch repository mismatch: expected {repository}, got {fetch_repo}")
+    if push_repo.casefold() != repository.casefold():
+        raise AuditError(f"origin push repository mismatch: expected {repository}, got {push_repo}")
 
 
 def delete_branch_with_lease(branch: str, expected_sha: str) -> NativeResult:
@@ -352,6 +373,16 @@ def delete_branch_with_lease(branch: str, expected_sha: str) -> NativeResult:
     result = run_native(["git", "push", lease, "origin", refspec])
     require_ok(result, f"exact-lease delete {branch}")
     return result
+
+
+def _row_by_branch(inventory: dict[str, Any], branch: str) -> dict[str, Any] | None:
+    return next((row for row in inventory["branches"] if row["branch"] == branch), None)
+
+
+def _raise_phase_error(message: str, results: list[dict[str, Any]]) -> None:
+    if results:
+        raise AuditIncompleteError(message)
+    raise AuditError(message)
 
 
 def execute_deletion(
@@ -366,24 +397,51 @@ def execute_deletion(
         raise AuditError("deletion target set contains duplicates")
     if any(name in retained for name in target_names):
         raise AuditError("deletion target intersects retained branches")
+    if any(row.get("classification") not in {CLASS_MERGED, CLASS_CLOSED} for row in targets):
+        raise AuditError("deletion target contains a non-authorized classification")
+
     ensure_origin_matches(repository)
+    pre_inventory = build_inventory(repository, retained)
+    must_remain = {
+        row["branch"]
+        for row in pre_inventory["branches"]
+        if row["classification"] in {CLASS_PROTECTED, CLASS_RETAINED}
+    }
+    overlap = sorted(set(target_names) & must_remain)
+    if overlap:
+        raise AuditError(f"deletion target became protected/retained: {', '.join(overlap)}")
 
     results: list[dict[str, Any]] = []
-    for row in targets:
-        branch = row["branch"]
-        expected_sha = row["sha"]
-        current = branch_map(repository)
-        current_sha = current.get(branch)
-        if current_sha != expected_sha:
-            raise AuditError(
-                f"pre-effect branch identity changed for {branch}: expected {expected_sha}, got {current_sha}"
+    for planned in targets:
+        branch = planned["branch"]
+        expected_sha = planned["sha"]
+        expected_classification = planned["classification"]
+        try:
+            fresh_inventory = build_inventory(repository, retained)
+        except AuditError as exc:
+            _raise_phase_error(f"fresh pre-effect inventory failed for {branch}: {exc}", results)
+            raise AssertionError("unreachable")
+        current = _row_by_branch(fresh_inventory, branch)
+        if current is None:
+            _raise_phase_error(f"pre-effect branch disappeared before delete: {branch}", results)
+        if current["sha"] != expected_sha:
+            _raise_phase_error(
+                f"pre-effect branch identity changed for {branch}: expected {expected_sha}, got {current['sha']}",
+                results,
             )
+        if current["classification"] != expected_classification:
+            _raise_phase_error(
+                f"pre-effect classification changed for {branch}: expected {expected_classification}, got {current['classification']}",
+                results,
+            )
+
         try:
             native = delete_branch_with_lease(branch, expected_sha)
             results.append(
                 {
                     "branch": branch,
                     "expected_sha": expected_sha,
+                    "classification": expected_classification,
                     "result": "DELETE_EXIT_0",
                     "stderr": native.stderr,
                 }
@@ -393,24 +451,45 @@ def execute_deletion(
                 {
                     "branch": branch,
                     "expected_sha": expected_sha,
+                    "classification": expected_classification,
                     "result": "DELETE_FAILED",
                     "error": str(exc),
                 }
             )
             write_json(audit_dir / "delete-results.json", results)
-            raise AuditError(f"delete failed for {branch}; stopped after partial/ambiguous effect") from exc
+            raise AuditIncompleteError(
+                f"delete command failed or became ambiguous for {branch}; stop and inspect audit evidence"
+            ) from exc
 
-    after = branch_map(repository)
-    residual = sorted(name for name in target_names if name in after)
+    try:
+        after_inventory = build_inventory(repository, retained)
+    except AuditError as exc:
+        write_json(audit_dir / "delete-results.json", results)
+        raise AuditIncompleteError(
+            f"post-delete authoritative inventory failed after effects: {exc}"
+        ) from exc
+
+    after_names = {row["branch"] for row in after_inventory["branches"]}
+    residual = sorted(name for name in target_names if name in after_names)
+    missing_must_remain = sorted(name for name in must_remain if name not in after_names)
     verification = {
         "targets": target_names,
         "results": results,
         "remaining_target_branches": residual,
         "remaining_target_count": len(residual),
+        "required_retained_or_protected": sorted(must_remain),
+        "missing_retained_or_protected": missing_must_remain,
     }
     write_json(audit_dir / "delete-results.json", verification)
     if residual:
-        raise AuditError(f"post-delete verification found residual targets: {', '.join(residual)}")
+        raise AuditIncompleteError(
+            f"post-delete verification found residual targets: {', '.join(residual)}"
+        )
+    if missing_must_remain:
+        raise AuditIncompleteError(
+            "post-delete verification found protected/retained branches missing: "
+            + ", ".join(missing_must_remain)
+        )
     return verification
 
 
@@ -496,6 +575,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.execute:
             raise AuditError("--execute requires --delete-merged or --delete-reviewed")
         return 0
+    except AuditIncompleteError as exc:
+        print(f"BRANCH CLEANUP: INCOMPLETE: {exc}", file=sys.stderr)
+        return 3
     except (AuditError, OSError) as exc:
         print(f"BRANCH CLEANUP: BLOCKED: {exc}", file=sys.stderr)
         return 2
