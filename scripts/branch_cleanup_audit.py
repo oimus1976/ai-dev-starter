@@ -55,19 +55,24 @@ def run_native(args: Sequence[str], *, cwd: Path | None = None) -> NativeResult:
     """Run a native command without shell re-parsing.
 
     Passing an argv sequence preserves complex arguments (including jq-like
-    expressions containing spaces/pipes) as one argument. stderr is retained
-    only for diagnostics; returncode is authoritative.
+    expressions containing spaces/pipes) as one argument. stdout/stderr are
+    decoded explicitly as UTF-8 so GitHub CLI JSON is not decoded through a
+    Windows legacy console code page such as cp932. Returncode is authoritative.
     """
 
     completed = subprocess.run(
         list(args),
         cwd=str(cwd) if cwd else None,
-        text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
     )
-    return NativeResult(tuple(str(arg) for arg in args), completed.returncode, completed.stdout, completed.stderr)
+    try:
+        stdout = completed.stdout.decode("utf-8")
+        stderr = completed.stderr.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise AuditError(f"native command returned non-UTF-8 output: {exc}") from exc
+    return NativeResult(tuple(str(arg) for arg in args), completed.returncode, stdout, stderr)
 
 
 def require_ok(result: NativeResult, context: str) -> str:
