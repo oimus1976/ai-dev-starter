@@ -91,24 +91,45 @@ def worktree_failures(worktree: Path, label: str) -> list[str]:
     return failures
 
 
-def _read_disposable_paths(repo_root: Path) -> set[str]:
+def _read_disposable_paths(repo_root: Path) -> tuple[set[str] | None, str | None]:
     profile_path = repo_root / "PROJECT_PROFILE.toml"
     if not profile_path.is_file():
-        return set()
+        return set(), None
     try:
         with profile_path.open("rb") as f:
             data = tomllib.load(f)
     except (tomllib.TOMLDecodeError, OSError):
-        return set()
+        return None, "PROJECT_PROFILE.toml is not valid TOML"
 
-    cleanup_cfg = data.get("cleanup", {})
+    if "cleanup" not in data:
+        return set(), None
+
+    cleanup_cfg = data["cleanup"]
     if not isinstance(cleanup_cfg, dict):
-        return set()
-    paths = cleanup_cfg.get("disposable_ignored_paths", [])
-    if not isinstance(paths, list):
-        return set()
+        return None, "PROJECT_PROFILE.toml [cleanup] must be a table"
 
-    return {p for p in paths if isinstance(p, str)}
+    if "disposable_ignored_paths" not in cleanup_cfg:
+        return set(), None
+
+    paths = cleanup_cfg["disposable_ignored_paths"]
+    if not isinstance(paths, list):
+        return None, "PROJECT_PROFILE.toml [cleanup].disposable_ignored_paths must be a list"
+
+    disposable = set()
+    for p in paths:
+        if not isinstance(p, str):
+            return None, "PROJECT_PROFILE.toml [cleanup].disposable_ignored_paths entries must be strings"
+        if not p:
+            return None, "PROJECT_PROFILE.toml [cleanup].disposable_ignored_paths cannot contain empty strings"
+        if p.startswith("/"):
+            return None, "PROJECT_PROFILE.toml [cleanup].disposable_ignored_paths cannot contain absolute paths"
+        if ".." in p.split("/") or "\\" in p:
+            return None, "PROJECT_PROFILE.toml [cleanup].disposable_ignored_paths cannot contain path escapes"
+        if any(c in p for c in ("*", "?", "[", "]")):
+            return None, "PROJECT_PROFILE.toml [cleanup].disposable_ignored_paths cannot contain wildcards/globs"
+        disposable.add(p)
+
+    return disposable, None
 
 
 def apply_disposable_cleanup(worktree: Path) -> list[str]:
@@ -129,7 +150,9 @@ def apply_disposable_cleanup(worktree: Path) -> list[str]:
     if ignored.returncode != 0:
         return ["could not inspect ignored files for cleanup"]
 
-    disposable = _read_disposable_paths(worktree)
+    disposable, cfg_error = _read_disposable_paths(worktree)
+    if cfg_error or disposable is None:
+        return [cfg_error or "malformed disposable paths configuration"]
 
     to_delete = []
     for record in ignored.stdout.split("\0"):
@@ -145,13 +168,14 @@ def apply_disposable_cleanup(worktree: Path) -> list[str]:
             resolved = full_path.resolve(strict=True)
             worktree_resolved = worktree.resolve(strict=True)
 
-            if not str(resolved).startswith(str(worktree_resolved)):
-                return ["disposable path escapes worktree bounds"]
-
             if full_path.is_symlink() or (hasattr(full_path, "is_junction") and full_path.is_junction()):
                 return ["disposable path is a symlink or junction"]
 
-            os_rel = resolved.relative_to(worktree_resolved)
+            try:
+                os_rel = resolved.relative_to(worktree_resolved)
+            except ValueError:
+                return ["disposable path escapes worktree bounds"]
+
             clean_path = path.rstrip("/")
             if os_rel.as_posix() != clean_path:
                 return ["ambiguous path resolution during cleanup"]
@@ -196,7 +220,11 @@ def cleanup_worktree_failures(worktree: Path, label: str) -> list[str]:
     if ignored.returncode != 0:
         failures.append(f"could not inspect ignored files in {label} worktree")
     else:
-        disposable = _read_disposable_paths(worktree)
+        disposable, cfg_error = _read_disposable_paths(worktree)
+        if cfg_error or disposable is None:
+            failures.append(cfg_error or "malformed disposable paths configuration")
+            return failures
+
         unknown_ignored = False
         import os
 
