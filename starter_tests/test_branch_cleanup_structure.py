@@ -23,7 +23,8 @@ class BranchCleanupStructureTests(unittest.TestCase):
     def test_policy_check_compiles_and_runs_branch_cleanup_regressions(self):
         text = (ROOT / ".github/workflows/policy-check.yml").read_text(encoding="utf-8")
         self.assertIn("scripts/branch_cleanup_audit.py", text)
-        self.assertIn('test_branch_cleanup_audit.py', text)
+        self.assertIn('test_branch_cleanup*.py', text)
+        self.assertTrue((ROOT / "starter_tests/test_branch_cleanup_encoding.py").is_file())
 
     def test_policy_document_keeps_cleanup_tools_and_authority_separate(self):
         text = (ROOT / "docs/branch-cleanup-policy.md").read_text(encoding="utf-8")
