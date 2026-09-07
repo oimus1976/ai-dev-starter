@@ -75,17 +75,35 @@ When complex arguments matter, avoid shell re-parsing. In particular, Windows Po
 
 A deletion plan must contain exact current branch identities. Automatic merged deletion requires the current branch SHA to equal a same-repository merged PR's head SHA. Human-reviewed closed-unmerged deletion requires an explicit expected SHA in the reviewed manifest.
 
-Immediately before a destructive effect, re-read the branch from GitHub and require the exact expected identity. A moved or missing reviewed branch blocks rather than silently changing the target set.
+Immediately before **each** destructive effect, rebuild the authoritative GitHub inventory and require all relevant facts to remain unchanged for that target:
 
-For execution, the helper requires the local Git `origin` to resolve to the same GitHub repository being audited. It deletes through Git using an exact expected-SHA lease:
+- branch still exists;
+- exact current SHA still matches the planned SHA;
+- classification still matches the authorized classification;
+- no open PR, protection, or other newly observed state has changed the branch out of the authorized class.
+
+Rechecking only the SHA is insufficient. A branch can keep the same SHA while its PR/protection/authority state changes.
+
+For execution, the helper requires Git `origin` to resolve to exactly one fetch URL and exactly one push URL, and both URLs must identify the same GitHub repository being audited. A separate push URL, mirror, or multiple push destinations blocks execution.
+
+The helper deletes through Git using an exact expected-SHA lease:
 
 ```text
 git push --force-with-lease=refs/heads/<branch>:<expected_sha> origin :refs/heads/<branch>
 ```
 
-The lease is an additional TOCTOU guard between the authoritative pre-effect GitHub read and the delete effect. A non-zero Git exit blocks; normal successful stderr output does not.
+The lease is an additional TOCTOU guard between the authoritative pre-effect GitHub read and the delete effect. A non-zero Git exit blocks/incompletes according to whether an effect command has already begun; normal successful stderr output does not.
 
 `MERGED_DELETE_CANDIDATE` may be selected automatically from the current authoritative inventory. `CLOSED_UNMERGED_REVIEW_REQUIRED` requires a human-reviewed exact target manifest. `MERGED_HEAD_MOVED_REVIEW_REQUIRED`, `OPEN_PR`, `NO_PR_REVIEW_REQUIRED`, `PROTECTED`, and `RETAINED_LONG_LIVED` are never automatic delete targets.
+
+## BLOCKED versus INCOMPLETE
+
+State before the first protected effect is different from state after an effect command begins.
+
+- `BRANCH CLEANUP: BLOCKED` — authority/preconditions failed before any delete command began; no cleanup effect was authorized.
+- `BRANCH CLEANUP: INCOMPLETE` — at least one delete command began or completed, then a later delete, fresh authority read, or postcondition check failed or became uncertain.
+
+On `INCOMPLETE`, preserve the audit evidence and stop. Do not retry the remaining set automatically or widen deletion authority to make the run look complete.
 
 ## Post-delete verification
 
@@ -93,12 +111,12 @@ A zero exit code from a delete command is necessary but not sufficient to report
 
 After the selected deletion set is processed:
 
-1. refetch current GitHub branches;
-2. intersect the exact target names with the fresh current set;
-3. require `remaining_target_count == 0`;
-4. confirm intended protected/retained branches still exist where relevant.
+1. rebuild the authoritative GitHub inventory;
+2. require every exact target branch to be absent;
+3. require every branch that was protected or explicitly retained before execution to remain present;
+4. record the final residual/missing sets in the audit output.
 
-If any target remains, report cleanup as blocked/incomplete and stop. Do not use force recovery to make the report green.
+If any target remains, or an intended protected/retained branch is missing, report cleanup as `INCOMPLETE` and stop. Do not use force recovery to make the report green.
 
 ## Local cleanup after remote verification
 
@@ -138,7 +156,7 @@ Plan deletion of current merged PR heads whose exact identity still matches a sa
 python scripts/branch_cleanup_audit.py --delete-merged
 ```
 
-Execution is explicit and requires running from a checkout whose GitHub `origin` matches the audited repository:
+Execution is explicit and requires running from a checkout whose GitHub `origin` fetch and push URLs both match the audited repository:
 
 ```text
 python scripts/branch_cleanup_audit.py --delete-merged --execute
@@ -167,7 +185,7 @@ and execute only after the plan is accepted:
 python scripts/branch_cleanup_audit.py --delete-reviewed reviewed.json --execute
 ```
 
-The helper uses authenticated `gh` reads, Python JSON parsing, argv-preserving native invocation, same-repository PR filtering, GitHub protected-branch state, exact merged-head identity classification, an origin-repository check, exact-SHA Git deletion leases, and authoritative post-delete residual verification.
+The helper uses authenticated `gh` reads, Python JSON parsing, argv-preserving native invocation, same-repository PR filtering, GitHub protected-branch state, exact merged-head identity classification, full per-effect authoritative reauthorization, fetch/push-origin repository checks, exact-SHA Git deletion leases, and authoritative post-delete residual/protected/retained verification.
 
 ## Relationship to other closeout tooling
 
