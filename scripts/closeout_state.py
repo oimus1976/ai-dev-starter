@@ -274,7 +274,7 @@ def cleanup_worktree_failures(worktree: Path, label: str) -> list[str]:
 
         if blocking_ignored:
             failures.append(
-                f"{label} worktree contains retained/unknown ignored paths that require preservation or migration: "
+                f"{label} worktree contains ignored files/directories; retained/unknown ignored paths require preservation or migration: "
                 + ", ".join(sorted(blocking_ignored))
             )
 
