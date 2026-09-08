@@ -37,7 +37,8 @@ class BranchCleanupStructureTests(unittest.TestCase):
         self.assertIn("deletion_authority: false", text)
         self.assertIn("no remote mutation capability", text)
         self.assertIn("Issue #22", text)
-        self.assertNotIn("MERGED_DELETE_CANDIDATE", text)
+        self.assertIn("`MERGED_REVIEW_CANDIDATE` replaces the earlier `MERGED_DELETE_CANDIDATE` concept", text)
+        self.assertEqual(text.count("MERGED_DELETE_CANDIDATE"), 1)
         self.assertNotIn("--force-with-lease=refs/heads/<branch>:<expected_sha>", text)
 
 
