@@ -195,6 +195,7 @@ def apply_disposable_cleanup(worktree: Path) -> list[str]:
 
     return failures
 
+
 def cleanup_worktree_failures(worktree: Path, label: str) -> list[str]:
     """Return stricter failures required before cleanup may mutate a worktree.
 
@@ -225,7 +226,7 @@ def cleanup_worktree_failures(worktree: Path, label: str) -> list[str]:
             failures.append(cfg_error or "malformed disposable paths configuration")
             return failures
 
-        unknown_ignored = False
+        blocking_ignored: list[str] = []
         import os
 
         for record in ignored.stdout.split("\0"):
@@ -236,13 +237,13 @@ def cleanup_worktree_failures(worktree: Path, label: str) -> list[str]:
             path = record[3:]
 
             if path not in disposable:
-                unknown_ignored = True
-                break
+                blocking_ignored.append(path)
+                continue
 
             # Path must not escape or be absolute
             if path.startswith("/") or ".." in path.split("/") or "\\" in path:
-                unknown_ignored = True
-                break
+                blocking_ignored.append(path)
+                continue
 
             # Ensure path is real and unambiguous.
             # Convert worktree and target to absolute resolved paths and compare.
@@ -253,29 +254,28 @@ def cleanup_worktree_failures(worktree: Path, label: str) -> list[str]:
 
                 # Check for symlink/junction by comparing os.path.realpath and absolute path
                 if full_path.is_symlink() or (hasattr(full_path, "is_junction") and full_path.is_junction()):
-                    unknown_ignored = True
-                    break
+                    blocking_ignored.append(path)
+                    continue
 
                 try:
                     os_rel = resolved.relative_to(worktree_resolved)
                 except ValueError:
-                    unknown_ignored = True
-                    break
+                    blocking_ignored.append(path)
+                    continue
 
                 clean_path = path.rstrip("/")
                 if os_rel.as_posix() != clean_path:
-                    unknown_ignored = True
-                    break
+                    blocking_ignored.append(path)
             except Exception:
                 # If resolve fails (e.g. strict=True but file doesn't exist? Wait, it's an ignored file reported by git, it should exist)
                 # But git can report ignored paths that were just deleted before status was checked (TOCTOU).
                 # To be safe, if we can't resolve it, fail closed.
-                unknown_ignored = True
-                break
+                blocking_ignored.append(path)
 
-        if unknown_ignored:
+        if blocking_ignored:
             failures.append(
-                f"{label} worktree contains ignored files/directories that cleanup could overwrite or delete"
+                f"{label} worktree contains retained/unknown ignored paths that require preservation or migration: "
+                + ", ".join(sorted(blocking_ignored))
             )
 
     index_flags = git("ls-files", "-v", "-z", cwd=worktree, check=False)
@@ -371,6 +371,7 @@ def list_worktrees(repo: Path) -> tuple[list[WorktreeInfo] | None, str | None]:
             )
         )
     return entries, None
+
 
 def worktrees_for_branch(repo: Path, branch: str) -> list[WorktreeInfo]:
     ref = f"refs/heads/{branch}"
