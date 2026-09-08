@@ -8,9 +8,11 @@ It deliberately does **not** delete remote branches.
 
 ## Authority and scope
 
-Current branch existence, current branch SHA, current GitHub-protected state, repository default branch, and PR state are read from authenticated `github.com` APIs. Conversation history, prior agent summaries, stale local `origin/*` refs, and prior cleanup output are not authority for current remote state.
+Current branch existence, current branch SHA, current GitHub-protected state, repository default branch, canonical repository identity, and PR state are read from authenticated `github.com` APIs. Conversation history, prior agent summaries, stale local `origin/*` refs, and prior cleanup output are not authority for current remote state.
 
 The helper pins GitHub CLI API reads to `github.com`; `GH_HOST` must not silently redirect audit authority to another host.
+
+The operator supplies `OWNER/REPO`, but that spelling is not itself the same-repository comparison authority. The helper first reads repository metadata from github.com, obtains GitHub's canonical `full_name`, and then uses that canonical identity for branch reads, PR reads, same-repository PR filtering, and the inventory `repository` field. The original operator spelling is retained separately as `requested_repository` for diagnosis. This prevents valid case variants, redirects, or renamed-repository resolution from silently discarding same-repository PR evidence.
 
 The helper has no remote mutation capability:
 
@@ -35,7 +37,7 @@ Per the baseline anti-loop rule, the destructive executor was removed instead of
 For a repository, the audit models at least:
 
 - `R`: current `(branch name, SHA)` pairs that exist on github.com;
-- `M`: `(head ref, head SHA)` pairs from merged PRs whose head repository is the same repository being audited.
+- `M`: `(head ref, head SHA)` pairs from merged PRs whose `head.repo.full_name` equals the canonical repository `full_name` returned by github.com.
 
 An exact `(name, SHA)` match between `R` and `M` is useful review evidence. It is **not deletion authority**, because it cannot prove branch incarnation.
 
@@ -95,7 +97,7 @@ Every entry in `review-candidates.json` records:
 - `human_review_required: true`;
 - `deletion_authority: false`.
 
-The inventory records `source_host: github.com` and `mutation_capability: NONE`.
+The inventory records `source_host: github.com`, canonical `repository`, diagnostic `requested_repository`, and `mutation_capability: NONE`.
 
 Large inventories belong in the audit directory; interactive output should normally show counts, classifications, host, mutation capability, and the audit path.
 
