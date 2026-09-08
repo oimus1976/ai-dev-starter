@@ -8,7 +8,7 @@ This repository uses the oimus AI Development Baseline.
 
 Before changing tracked project state:
 
-1. Read `PROJECT_STATUS.md`, `PROJECT_PROFILE.toml`, and the relevant Issue/PR and ADR/design documentation.
+1. Read `BASELINE.md`, `PROJECT_STATUS.md`, `PROJECT_PROFILE.toml`, and the relevant Issue/PR and ADR/design documentation.
 2. Resolve the intended work item, repository, implementation branch, and scope.
 3. Identify the change-specific risk facets and derive the applicable risk level under `BASELINE.md`.
 
