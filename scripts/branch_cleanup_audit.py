@@ -110,6 +110,22 @@ def api_json(endpoint: str) -> Any:
     return parse_json(text, endpoint)
 
 
+def repository_identity(repository: str) -> tuple[str, str]:
+    """Resolve operator input to GitHub's canonical full_name and default branch."""
+
+    requested = validate_repository(repository)
+    payload = api_json(f"repos/{requested}")
+    if not isinstance(payload, dict):
+        raise AuditError("repository metadata was not a JSON object")
+    full_name = payload.get("full_name")
+    default_branch = payload.get("default_branch")
+    if not isinstance(full_name, str) or full_name.count("/") != 1:
+        raise AuditError("repository full_name is missing or invalid")
+    if not isinstance(default_branch, str) or not default_branch:
+        raise AuditError("repository default_branch is missing")
+    return full_name, default_branch
+
+
 def paged_list(repository: str, resource: str, *, state: str | None = None) -> list[dict[str, Any]]:
     page = 1
     items: list[dict[str, Any]] = []
@@ -129,14 +145,6 @@ def paged_list(repository: str, resource: str, *, state: str | None = None) -> l
             break
         page += 1
     return items
-
-
-def repository_default_branch(repository: str) -> str:
-    payload = api_json(f"repos/{repository}")
-    branch = payload.get("default_branch") if isinstance(payload, dict) else None
-    if not isinstance(branch, str) or not branch:
-        raise AuditError("repository default_branch is missing")
-    return branch
 
 
 def branch_records(repository: str) -> dict[str, dict[str, Any]]:
@@ -200,7 +208,6 @@ def classify_branch(
 
     merged = [pr for pr in prs if pr.get("merged_at") is not None]
     if any(pr_head_sha(pr) == current_sha for pr in merged):
-        # Name+SHA is useful review evidence, but not branch-incarnation identity.
         return CLASS_MERGED
     if merged:
         return CLASS_MERGED_MOVED
@@ -225,9 +232,9 @@ def compact_prs(prs: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def build_inventory(repository: str, retained: set[str]) -> dict[str, Any]:
-    default_branch = repository_default_branch(repository)
-    branches = branch_records(repository)
-    prs = pull_map(repository)
+    canonical_repository, default_branch = repository_identity(repository)
+    branches = branch_records(canonical_repository)
+    prs = pull_map(canonical_repository)
     rows: list[dict[str, Any]] = []
     for branch, record in sorted(branches.items()):
         branch_prs = prs.get(branch, [])
@@ -251,7 +258,8 @@ def build_inventory(repository: str, retained: set[str]) -> dict[str, Any]:
         "schema_version": "2.0",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "source_host": GITHUB_HOST,
-        "repository": repository,
+        "repository": canonical_repository,
+        "requested_repository": repository,
         "default_branch": default_branch,
         "retained": sorted(retained),
         "mutation_capability": "NONE",
@@ -346,7 +354,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         repository = validate_repository(args.repository)
         retained = set(args.retain)
         inventory = build_inventory(repository, retained)
-        out_dir = audit_directory(repository, args.audit_dir)
+        out_dir = audit_directory(inventory["repository"], args.audit_dir)
         write_json(out_dir / "inventory.json", inventory)
         write_json(out_dir / "review-candidates.json", review_candidates(inventory))
         print_summary(inventory, out_dir)
