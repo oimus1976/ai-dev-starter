@@ -36,6 +36,19 @@ Report evidence separately, including as applicable:
 
 Do not claim Ready, merge, deploy, release, or another protected effect merely because implementation/tests/review succeeded.
 
+## Hosted CI quota/unavailability
+
+A red/blocked GitHub Actions run is not automatically a code failure. If evidence shows that GitHub-hosted Actions is unavailable because of account minutes/quota, billing restriction, or provider availability:
+
+- classify hosted CI as unavailable/blocked rather than PASS or code FAIL;
+- do not repeatedly rerun the same hosted jobs while the provider/account condition persists;
+- never relabel local verification as `GitHub Actions SUCCESS`;
+- use the exact-head local fallback in `docs/GITHUB_ACTIONS_QUOTA_FALLBACK.md` when continued progress is justified;
+- record repository/branch/full HEAD, commands, exit status, and log location;
+- for `HIGH_IMPACT`, keep independent review, required real-boundary smoke, C2, Ready, and merge as separate gates.
+
+If correctness specifically depends on the hosted runner environment, local fallback cannot establish that runner-specific claim.
+
 ## After review findings
 
 A remediation creates a new change that may invalidate prior evidence.
