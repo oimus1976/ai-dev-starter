@@ -115,16 +115,18 @@ Remote topic deletion is a stronger optional effect and is off by default. Use `
 
 If either verifier or cleanup blocks, preserve intentional local work and report the unresolved state. Canonical branch/worktree and unrelated worktrees/refs are never cleanup targets.
 
-## Repository-wide branch cleanup
+## Repository-wide branch audit
 
-Repository-wide remote branch cleanup is a separate destructive phase from one-PR local closeout. Use current GitHub branch existence and PR state as the authority; do not infer remote existence from chat history, stale `origin/*` refs, or prior cleanup output.
+Repository-wide branch audit is separate from one-PR local closeout. Use current authenticated `github.com` branch existence, SHA, protection, default-branch state, and same-repository PR evidence as the authority; do not infer remote existence from chat history, stale `origin/*` refs, or prior cleanup output.
 
-Use `scripts/branch_cleanup_audit.py` and follow `docs/branch-cleanup-policy.md`.
+Use `scripts/branch_cleanup_audit.py --repository OWNER/REPO` and follow `docs/branch-cleanup-policy.md`.
 
-The default run is inventory-only. Keep classification separate from mutation. Automatic deletion is limited to the current-GitHub intersection of branches and merged PR heads. Closed-unmerged branches require individual human review and an exact branch+SHA manifest. No-PR branches require explicit review for long-lived/operational intent; they are not automatic orphan candidates.
+The helper is **audit-only**. It must not push, delete refs, or expose `--execute`, `--delete-merged`, or `--delete-reviewed`. It writes `inventory.json` plus `review-candidates.json`; review-candidate entries are evidence only and explicitly carry `deletion_authority: false`.
 
-For native `git`/`gh` commands, exit status is authoritative for command success. stderr is diagnostic output only and may contain normal success/progress text. Avoid shell/PowerShell argument re-parsing for complex expressions when exact argv matters.
+Exact current name+SHA correlation with a same-repository merged PR is classified `MERGED_REVIEW_CANDIDATE`, not automatic deletion authority. GitHub does not provide a stable branch-incarnation identity that proves a deleted/recreated ref at the same name+SHA is the historical merged branch.
 
-A successful delete command is not completion evidence. After deletion, refetch GitHub branches and require zero residual target branches. Only after remote verification may local remote-tracking refs be pruned and stale local branches reviewed separately.
+Closed-unmerged and no-PR branches require individual human review. Open-PR, protected/default, and explicitly retained long-lived branches are not review-deletion candidates. Fork PRs do not supply same-repository branch authority.
 
-Protected/default branches and explicitly retained long-lived branches are never automatic cleanup targets. If classification, branch identity, deletion result, or post-delete existence is uncertain, stop rather than widening deletion authority.
+For native `gh` commands, exit status is authoritative for command success. stderr is diagnostic output only and may contain normal success/progress text. GitHub CLI output is decoded as UTF-8 rather than through a Windows legacy console code page.
+
+Any repository-wide destructive executor is outside this helper's authority and must be designed separately. Issue #22 tracks that work. Do not infer permission to delete from `MERGED_REVIEW_CANDIDATE`, `review-candidates.json`, or a successful audit run.
