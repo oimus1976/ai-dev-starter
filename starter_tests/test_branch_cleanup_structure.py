@@ -5,19 +5,19 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class BranchCleanupStructureTests(unittest.TestCase):
-    def test_baseline_declares_authoritative_remote_cleanup_gate(self):
+    def test_baseline_does_not_claim_repository_wide_auto_delete_authority(self):
         text = (ROOT / "BASELINE.md").read_text(encoding="utf-8")
-        self.assertIn("Repository-wide branch cleanup is a separate destructive gate", text)
-        self.assertIn("Current branch existence and PR state on GitHub are authoritative", text)
-        self.assertIn("Closed-unmerged PR branches are never bulk-delete candidates", text)
-        self.assertIn("process exit status is the command success authority", text)
-        self.assertIn("require the exact target set to have zero residual members", text)
+        self.assertNotIn("MERGED_DELETE_CANDIDATE", text)
+        self.assertNotIn("automatic merged-branch deletion", text)
+        self.assertIn("If the same safety invariant produces a `MAJOR` finding after two remediation attempts", text)
 
-    def test_agent_instructions_reference_helper_and_policy(self):
+    def test_agent_instructions_define_audit_only_scope(self):
         text = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
-        self.assertIn("scripts/branch_cleanup_audit.py", text)
+        self.assertIn("scripts/branch_cleanup_audit.py --repository OWNER/REPO", text)
         self.assertIn("docs/branch-cleanup-policy.md", text)
-        self.assertIn("Closed-unmerged branches require individual human review", text)
+        self.assertIn("audit-only", text)
+        self.assertIn("deletion_authority: false", text)
+        self.assertIn("Issue #22", text)
         self.assertIn("stderr is diagnostic output only", text)
 
     def test_policy_check_compiles_and_runs_branch_cleanup_regressions(self):
@@ -26,17 +26,19 @@ class BranchCleanupStructureTests(unittest.TestCase):
         self.assertIn('test_branch_cleanup*.py', text)
         self.assertTrue((ROOT / "starter_tests/test_branch_cleanup_encoding.py").is_file())
 
-    def test_policy_document_keeps_cleanup_tools_and_authority_separate(self):
+    def test_policy_document_states_no_mutation_authority(self):
         text = (ROOT / "docs/branch-cleanup-policy.md").read_text(encoding="utf-8")
         self.assertIn("verify_local_closeout.py", text)
         self.assertIn("post_merge_cleanup.py", text)
         self.assertIn("branch_cleanup_audit.py", text)
-        self.assertIn("same repository being cleaned", text)
-        self.assertIn("fork PR using the same `head.ref` never authorizes deletion", text)
-        self.assertIn("GitHub currently reports as protected", text)
-        self.assertIn("exact current SHA", text)
-        self.assertIn("--force-with-lease=refs/heads/<branch>:<expected_sha>", text)
-        self.assertIn("Do not substitute one tool's successful result", text)
+        self.assertIn("pins GitHub CLI API reads to `github.com`", text)
+        self.assertIn("MERGED_REVIEW_CANDIDATE", text)
+        self.assertIn("mutation_capability: NONE", text)
+        self.assertIn("deletion_authority: false", text)
+        self.assertIn("no remote mutation capability", text)
+        self.assertIn("Issue #22", text)
+        self.assertNotIn("MERGED_DELETE_CANDIDATE", text)
+        self.assertNotIn("--force-with-lease=refs/heads/<branch>:<expected_sha>", text)
 
 
 if __name__ == "__main__":
