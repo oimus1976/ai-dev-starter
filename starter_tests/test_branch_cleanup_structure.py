@@ -41,6 +41,14 @@ class BranchCleanupStructureTests(unittest.TestCase):
         self.assertEqual(text.count("MERGED_DELETE_CANDIDATE"), 1)
         self.assertNotIn("--force-with-lease=refs/heads/<branch>:<expected_sha>", text)
 
+    def test_policy_records_revised_guarantee_and_module_responsibilities(self):
+        text = (ROOT / "docs/branch-cleanup-policy.md").read_text(encoding="utf-8")
+        self.assertIn("AST/source-shape tests are not a complete security boundary", text)
+        self.assertIn("Any new process/network capability", text)
+        self.assertIn("branch_cleanup_core.py", text)
+        self.assertIn("branch_cleanup_github.py", text)
+        self.assertTrue((ROOT / "docs/adr/0002-audit-read-boundary.md").is_file())
+
 
 if __name__ == "__main__":
     unittest.main()

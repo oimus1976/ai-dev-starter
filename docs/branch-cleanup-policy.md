@@ -24,6 +24,18 @@ The helper has no remote mutation capability:
 
 Its output is evidence for human review only.
 
+## Audit/read architecture boundary
+
+PR #21 separates three responsibilities (see ADR-0002):
+
+- `scripts/branch_cleanup_core.py` interprets supplied repository metadata, branches, and PRs; classifies branches; and generates review candidates and JSON. It has no process, network, filesystem, or clock I/O. The caller supplies the timestamp.
+- `scripts/branch_cleanup_github.py` exposes only repository metadata, branch-list, and pull-request-list reads. It builds the endpoints internally and performs authenticated `gh api --hostname github.com <endpoint>` reads without method overrides, request bodies, or shell execution. Native exit status and UTF-8 decoding remain authoritative.
+- `scripts/branch_cleanup_audit.py` composes those reads with the pure core and writes local evidence. It resolves GitHub's canonical identity before requesting branches and PRs.
+
+The guarantee is about the current reviewed production implementation: it contains no remote mutation path and emits no deletion authority. AST/source-shape tests are not a complete security boundary and cannot prove all future Python forms mutation-free. The former exhaustive capability validator and its alias/import fixtures are replaced by tests of the pure core, the narrow read operations, failure handling, and the composed inventory path down to mocked native calls.
+
+Any new process/network capability is an architecture-boundary change requiring independent review. This module separation does not restrict the permissions of the operator's GitHub credentials. Stronger runtime capability enforcement requires separate design; destructive execution remains scoped to Issue #22.
+
 ## Why deletion was scoped out
 
 Independent review of PR #21 exposed a structural limitation: GitHub branch name + SHA + PR history does not provide a stable branch-incarnation identity. A branch may be deleted and later recreated at the same name and same SHA for a different purpose. Historical merged-PR evidence cannot distinguish those incarnations.

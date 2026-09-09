@@ -33,6 +33,8 @@ REQUIRED = [
     "scripts/verify_local_closeout.py",
     "scripts/post_merge_cleanup.py",
     "scripts/branch_cleanup_audit.py",
+    "scripts/branch_cleanup_core.py",
+    "scripts/branch_cleanup_github.py",
     "starter_tests/test_verify_repo.py",
     "starter_tests/test_local_closeout.py",
     "starter_tests/test_post_merge_cleanup.py",
