@@ -13,7 +13,6 @@ import json
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -38,53 +37,8 @@ REVIEW_CLASSES = {
 }
 
 
-@dataclass(frozen=True)
-class NativeResult:
-    args: tuple[str, ...]
-    returncode: int
-    stdout: str
-    stderr: str
-
-    @property
-    def ok(self) -> bool:
-        return self.returncode == 0
-
-
 class AuditError(RuntimeError):
     """Fail-closed audit error."""
-
-
-def run_native(args: Sequence[str], *, cwd: Path | None = None) -> NativeResult:
-    """Run a native command with argv preserved and UTF-8 output decoding.
-
-    Native exit status is authoritative. stderr is diagnostic output only.
-    """
-
-    completed = subprocess.run(
-        list(args),
-        cwd=str(cwd) if cwd else None,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    try:
-        stdout = completed.stdout.decode("utf-8")
-        stderr = completed.stderr.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise AuditError(f"native command returned non-UTF-8 output: {exc}") from exc
-    return NativeResult(
-        tuple(str(arg) for arg in args),
-        completed.returncode,
-        stdout,
-        stderr,
-    )
-
-
-def require_ok(result: NativeResult, context: str) -> str:
-    if not result.ok:
-        detail = result.stderr.strip() or result.stdout.strip() or "no diagnostic output"
-        raise AuditError(f"{context} failed with exit {result.returncode}: {detail}")
-    return result.stdout
 
 
 def parse_json(text: str, context: str) -> Any:
@@ -100,14 +54,34 @@ def validate_repository(repository: str) -> str:
     return repository
 
 
+def github_api_get(endpoint: str) -> Any:
+    """Perform the helper's only native operation: a fixed GET-style github.com API read."""
+
+    completed = subprocess.run(
+        ["gh", "api", "--hostname", GITHUB_HOST, endpoint],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    try:
+        stdout = completed.stdout.decode("utf-8")
+        stderr = completed.stderr.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise AuditError(f"native command returned non-UTF-8 output: {exc}") from exc
+    if completed.returncode != 0:
+        detail = stderr.strip() or stdout.strip() or "no diagnostic output"
+        raise AuditError(
+            f"gh api GET {GITHUB_HOST}/{endpoint} failed with exit {completed.returncode}: {detail}"
+        )
+    if not stdout.strip():
+        return None
+    return parse_json(stdout, endpoint)
+
+
 def api_json(endpoint: str) -> Any:
     """Read JSON from github.com explicitly, ignoring GH_HOST for authority."""
 
-    result = run_native(["gh", "api", "--hostname", GITHUB_HOST, endpoint])
-    text = require_ok(result, f"gh api GET {GITHUB_HOST}/{endpoint}")
-    if not text.strip():
-        return None
-    return parse_json(text, endpoint)
+    return github_api_get(endpoint)
 
 
 def repository_identity(repository: str) -> tuple[str, str]:
