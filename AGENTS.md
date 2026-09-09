@@ -114,3 +114,19 @@ Remote topic deletion is a stronger optional effect and is off by default. Use `
 `--execute` re-reads authority and mutable Git state rather than trusting a prior plan. Worktree-registry authorization and local-ref postconditions must come from successful reads; read failure is never equivalent to an empty registry/ref set. A pre-effect failure is `SAFE CLEANUP: BLOCKED` and performs no cleanup. A failure after an authorized effect has already completed or an effect command has begun is `SAFE CLEANUP: INCOMPLETE`; report the partial/ambiguous state and stop rather than attempting force recovery.
 
 If either verifier or cleanup blocks, preserve intentional local work and report the unresolved state. Canonical branch/worktree and unrelated worktrees/refs are never cleanup targets.
+
+## Repository-wide branch audit
+
+Repository-wide branch audit is separate from one-PR local closeout. Use current authenticated `github.com` branch existence, SHA, protection, default-branch state, and same-repository PR evidence as the authority; do not infer remote existence from chat history, stale `origin/*` refs, or prior cleanup output.
+
+Use `scripts/branch_cleanup_audit.py --repository OWNER/REPO` and follow `docs/branch-cleanup-policy.md`.
+
+The helper is **audit-only**. It must not push, delete refs, or expose `--execute`, `--delete-merged`, or `--delete-reviewed`. It writes `inventory.json` plus `review-candidates.json`; review-candidate entries are evidence only and explicitly carry `deletion_authority: false`.
+
+Exact current name+SHA correlation with a same-repository merged PR is classified `MERGED_REVIEW_CANDIDATE`, not automatic deletion authority. GitHub does not provide a stable branch-incarnation identity that proves a deleted/recreated ref at the same name+SHA is the historical merged branch.
+
+Closed-unmerged and no-PR branches require individual human review. Open-PR, protected/default, and explicitly retained long-lived branches are not review-deletion candidates. Fork PRs do not supply same-repository branch authority.
+
+For native `gh` commands, exit status is authoritative for command success. stderr is diagnostic output only and may contain normal success/progress text. GitHub CLI output is decoded as UTF-8 rather than through a Windows legacy console code page.
+
+Any repository-wide destructive executor is outside this helper's authority and must be designed separately. Issue #22 tracks that work. Do not infer permission to delete from `MERGED_REVIEW_CANDIDATE`, `review-candidates.json`, or a successful audit run.

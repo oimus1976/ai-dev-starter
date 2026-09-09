@@ -33,6 +33,7 @@ jobs:
           scripts/closeout_state.py
           scripts/verify_local_closeout.py
           scripts/post_merge_cleanup.py
+          scripts/branch_cleanup_audit.py
       - name: Run canonical starter regression tests
         if: github.repository == 'oimus1976/ai-dev-starter'
         run: python -m unittest discover -s starter_tests -v
@@ -60,8 +61,10 @@ jobs:
         with:
           python-version: '3.12'
       - name: Compile closeout tools
-        run: python -m py_compile scripts/closeout_state.py scripts/verify_local_closeout.py scripts/post_merge_cleanup.py
+        run: python -m py_compile scripts/closeout_state.py scripts/verify_local_closeout.py scripts/post_merge_cleanup.py scripts/branch_cleanup_audit.py
       - name: Run local closeout verifier regressions
         run: python -m unittest discover -s starter_tests -p "test_local_closeout.py" -v
       - name: Run post-merge cleanup regressions
         run: python -m unittest discover -s starter_tests -p "test_post_merge_cleanup*.py" -v
+      - name: Run authoritative branch cleanup regressions
+        run: python -m unittest discover -s starter_tests -p "test_branch_cleanup*.py" -v
