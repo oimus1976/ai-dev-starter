@@ -87,6 +87,8 @@ Merge status and local worktree closeout are separate facts.
 
 After a tracked PR is human-merged, follow the post-merge closeout procedure defined in `BASELINE.md` and the repository-provided verification/cleanup tools.
 
+When retiring an eligible merged topic worktree, use `python scripts/post_merge_cleanup.py --pr <PR_NUMBER>` as the plan-only first step. Proceed with `--execute` only after the plan is eligible; do not substitute forced worktree/branch cleanup.
+
 Do not use destructive cleanup merely to make a closeout check pass. Preserve intentional local work and report blocked or incomplete closeout state explicitly.
 
 ## Repository-wide branch audit
