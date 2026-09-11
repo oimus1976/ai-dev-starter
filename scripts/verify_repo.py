@@ -24,7 +24,6 @@ REQUIRED = [
     "PROJECT_STATUS.md",
     "CHANGELOG.md",
     "docs/BASELINE_PROVENANCE.md",
-    "docs/branch-cleanup-policy.md",
     "docs/adr/README.md",
     ".github/pull_request_template.md",
     ".github/workflows/policy-check.yml",
@@ -32,16 +31,12 @@ REQUIRED = [
     "scripts/closeout_state.py",
     "scripts/verify_local_closeout.py",
     "scripts/post_merge_cleanup.py",
-    "scripts/branch_cleanup_audit.py",
-    "scripts/branch_cleanup_core.py",
-    "scripts/branch_cleanup_github.py",
     "starter_tests/test_verify_repo.py",
     "starter_tests/test_local_closeout.py",
     "starter_tests/test_post_merge_cleanup.py",
     "starter_tests/test_post_merge_cleanup_adversarial.py",
     "starter_tests/test_post_merge_cleanup_opaque_state.py",
     "starter_tests/test_post_merge_cleanup_toctou.py",
-    "starter_tests/test_branch_cleanup_audit.py",
 ]
 
 RISK_ORDER = {"ROUTINE": 1, "ELEVATED": 2, "HIGH_IMPACT": 3}
