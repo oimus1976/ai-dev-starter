@@ -87,7 +87,7 @@ Merge status and local worktree closeout are separate facts.
 
 After a tracked PR is human-merged, follow the post-merge closeout procedure defined in `BASELINE.md` and the repository-provided verification/cleanup tools.
 
-When retiring an eligible merged topic worktree, use `python scripts/post_merge_cleanup.py --pr <PR_NUMBER>` as the plan-only first step. Proceed with `--execute` only after the plan is eligible; do not substitute forced worktree/branch cleanup.
+When retiring an eligible merged topic worktree, use `python scripts/post_merge_cleanup.py --pr <PR_NUMBER>` as the plan-only first step. After the tool produces an eligible plan, present that specific plan to the human and obtain new, explicit authorization to execute it before running `--execute`. Do not infer execution authorization from an earlier or general request to clean up.
 
 Do not use destructive cleanup merely to make a closeout check pass. Preserve intentional local work and report blocked or incomplete closeout state explicitly.
 
@@ -95,4 +95,6 @@ Do not use destructive cleanup merely to make a closeout check pass. Preserve in
 
 For repository-wide branch inventory/review, use `python scripts/branch_cleanup_audit.py --repository OWNER/REPO` and follow `docs/branch-cleanup-policy.md`.
 
-The helper is audit-only. Its output is evidence for human review and never deletion authority. Any destructive executor is a separate authority boundary.
+The helper is audit-only. Its output is evidence for human review and never deletion authority; review-candidate entries explicitly carry `deletion_authority: false`. Any destructive executor is a separate authority boundary tracked in Issue #22.
+
+For native `gh` commands, exit status is authoritative for command success; stderr is diagnostic output only and may contain normal success/progress text.
