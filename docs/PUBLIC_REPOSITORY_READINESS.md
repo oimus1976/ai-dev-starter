@@ -17,51 +17,68 @@ Any uncertainty, incomplete scan, unresolved secret/private-data finding, redist
 
 `READY_FOR_HUMAN_GATE` is evidence, not authority to publish. The private -> public visibility change remains a separate human action.
 
-## 1. Pin the audit target
+## 1. Pin the audit target and create an isolated audit clone
 
-Run from a fresh local checkout. Do not audit a moving branch by name alone.
+Audit an exact GitHub state in a disposable clone rather than relying on whichever refs happen to exist in a development checkout. The audit clone is read-only with respect to GitHub; do not push from it.
 
 ```powershell
 & {
     $ErrorActionPreference = 'Stop'
-    $repo = (git rev-parse --show-toplevel).Trim()
-    Set-Location $repo
-
+    $repoSlug = 'OWNER/REPO'
     $ts = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $logDir = Join-Path $env:TEMP "ai-dev-starter-logs\public-readiness\$ts"
+    $auditRoot = Join-Path $env:TEMP "ai-dev-starter-logs\public-readiness\$ts"
+    $auditRepo = Join-Path $auditRoot 'repo'
+    $logDir = Join-Path $auditRoot 'evidence'
     New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
-    $head = (git rev-parse HEAD).Trim()
-    $branch = (git branch --show-current).Trim()
-    $status = @(git status --short)
-    if ($LASTEXITCODE -ne 0) { throw 'git status failed' }
+    gh repo clone $repoSlug $auditRepo -- --no-checkout
+    if ($LASTEXITCODE -ne 0) { throw 'audit clone failed' }
+
+    # A normal clone gets current branch refs. PR heads are a separate GitHub ref
+    # namespace and are fetched into audit-only remote-tracking refs so --all
+    # includes them without changing the development checkout.
+    git -C $auditRepo fetch origin '+refs/pull/*/head:refs/remotes/audit-pr/*'
+    if ($LASTEXITCODE -ne 0) { throw 'PR-head ref fetch failed' }
+
+    $head = (git -C $auditRepo rev-parse origin/main).Trim()
+    $defaultBranch = (gh repo view $repoSlug --json defaultBranchRef --jq '.defaultBranchRef.name').Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'default-branch read failed' }
+    $head = (git -C $auditRepo rev-parse "origin/$defaultBranch").Trim()
 
     @(
+        "AUDIT_REPOSITORY=$repoSlug"
+        "AUDIT_DEFAULT_BRANCH=$defaultBranch"
         "AUDIT_HEAD=$head"
-        "AUDIT_BRANCH=$branch"
-        "WORKTREE_CLEAN=$($status.Count -eq 0)"
+        "AUDIT_REPO=$auditRepo"
     ) | Set-Content -Encoding utf8 (Join-Path $logDir 'audit-target.txt')
 
-    $logDir
+    "AUDIT_ROOT=$auditRoot"
+    "AUDIT_REPO=$auditRepo"
+    "EVIDENCE_DIR=$logDir"
 }
 ```
 
-Record the exact SHA in the repository-specific audit record. If the audited SHA changes, evidence from the old SHA does not automatically cover the new one.
+Record the exact SHA in the repository-specific audit record. If the intended publication SHA changes, evidence from the old SHA does not automatically cover the new one.
 
-## 2. Scan current content and full Git history for secrets
+The audit clone deliberately remains under `%TEMP%` after the procedure so cleanup is not silently coupled to evidence generation. Remove it later only after the evidence has been reviewed and any needed local records have been retained.
+
+## 2. Scan branches, tags, and GitHub PR-head refs for secrets
 
 Use a dedicated secret scanner that scans Git history. The canonical example is Gitleaks. Record the exact scanner version before interpreting the result.
+
+Gitleaks `git` mode uses Git history and accepts `git log` options through `--log-opts`; `--all` therefore scans the current refs present in the isolated audit clone, including the fetched `audit-pr/*` refs.
 
 ```powershell
 & {
     $ErrorActionPreference = 'Stop'
-    $logDir = '<log directory created in step 1>'
+    $auditRepo = '<AUDIT_REPO from step 1>'
+    $logDir = '<EVIDENCE_DIR from step 1>'
 
     gitleaks version | Set-Content -Encoding utf8 (Join-Path $logDir 'gitleaks-version.txt')
     if ($LASTEXITCODE -ne 0) { throw 'gitleaks version failed' }
 
     $report = Join-Path $logDir 'gitleaks-history.json'
-    gitleaks git --redact=100 --report-format json --report-path $report --exit-code 42 --log-opts='--all --full-history' .
+    gitleaks git --redact=100 --report-format json --report-path $report --exit-code 42 --log-opts='--all --full-history' $auditRepo
     $code = $LASTEXITCODE
 
     if ($code -eq 0) {
@@ -78,19 +95,23 @@ Use a dedicated secret scanner that scans Git history. The canonical example is 
 
 Do not paste detected secret values into Issues, PRs, chat, or durable shared logs. Keep the redacted report local. A finding is not cleared merely because the current file no longer contains the value.
 
+A zero-finding Gitleaks result clears only the scanner/ruleset scope. It does **not** prove that Issues, PR comments/attachments, Actions logs, unusual credentials, personal data, or redistribution-sensitive material are safe.
+
 If a real secret was ever committed, revoke/rotate it first. History rewriting, if still desired, is a separate consequential human decision; do not rewrite shared history automatically.
 
 ## 3. Review commit metadata and historical object names
 
-Commit author identity and email addresses become publication metadata. Review them intentionally.
+Commit author identity and email addresses become publication metadata. Review them intentionally. Use the same isolated audit clone so PR-head commits are included.
 
 ```powershell
-$logDir = '<log directory created in step 1>'
-git log --all --date=iso-strict --format='%H`t%an`t%ae`t%ad`t%s' |
+$auditRepo = '<AUDIT_REPO from step 1>'
+$logDir = '<EVIDENCE_DIR from step 1>'
+
+git -C $auditRepo log --all --date=iso-strict --format='%H`t%an`t%ae`t%ad`t%s' |
     Set-Content -Encoding utf8 (Join-Path $logDir 'commit-metadata.tsv')
 if ($LASTEXITCODE -ne 0) { throw 'git log failed' }
 
-git rev-list --objects --all |
+git -C $auditRepo rev-list --objects --all |
     Sort-Object -Unique |
     Set-Content -Encoding utf8 (Join-Path $logDir 'historical-object-names.txt')
 if ($LASTEXITCODE -ne 0) { throw 'git rev-list failed' }
@@ -104,6 +125,8 @@ Review at least:
 - unexpected binary/vendor assets.
 
 A privacy-sensitive filename can remain visible in history even when its contents were later removed.
+
+PR-head fetching materially broadens the reachable audit set, but it still does not prove absence from every GitHub-retained unreachable object or platform database. Issues/PR discussion, attachments, and Actions are reviewed separately below.
 
 ## 4. Review redistribution and license state
 
@@ -134,7 +157,7 @@ Useful inventories with GitHub CLI:
 
 ```powershell
 $repo = 'OWNER/REPO'
-$logDir = '<log directory created in step 1>'
+$logDir = '<EVIDENCE_DIR from step 1>'
 
 gh repo view $repo --json nameWithOwner,visibility,isPrivate,defaultBranchRef,description,homepageUrl,licenseInfo |
     Set-Content -Encoding utf8 (Join-Path $logDir 'github-repository.json')
