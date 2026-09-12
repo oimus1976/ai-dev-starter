@@ -86,7 +86,7 @@ Assessment: publication review must cover **all refs**, not only `main`. The iso
 
 The recursive tree for audited `main` consists of Markdown/TOML/YAML/Python source and tests; no obvious current vendored binary, media, font, model/data bundle, or third-party asset directory was identified in the root/tree inventory.
 
-Assessment: this reduces the current-tree redistribution concern but does not by itself clear copied third-party text. B5 remains open until the historical text/license/vendor indicator scan is reviewed.
+Assessment: current-tree redistribution risk is low and was further checked against historical object names and text indicators below.
 
 ### Historical metadata / object-name inventory
 
@@ -104,7 +104,21 @@ Observed:
 
 Human owner decision: the historical `oimus1976@gmail.com` author address is **accepted for public disclosure** for this repository. No history rewrite is required or authorized on account of that address.
 
-Assessment: Git-history privacy concern for the author email is closed by explicit human classification. The zero-risk-path result substantially reduces B5, but does not prove absence of copied third-party/license-restricted text; one historical text indicator pass remains required.
+Assessment: Git-history privacy concern for the author email is closed by explicit human classification. The zero-risk-path result substantially reduces redistribution risk.
+
+### Historical third-party/license text indicator pass
+
+After refreshing the fetched PR-head refs, the isolated audit clone was scanned across all reachable commits for copyright, license, third-party, vendoring, and redistribution indicators.
+
+Observed:
+
+- reachable commits scanned: 213;
+- unique matched paths: 3;
+- matched paths: `CHANGELOG.md`, `docs/audits/ai-dev-starter-public-readiness-2026-09-12.md`, and `docs/PUBLIC_REPOSITORY_READINESS.md`;
+- all three hits are the repository's own current public-readiness/audit wording introduced by Issue #33 work;
+- no historical source/test/config/vendor path surfaced from the indicator pattern.
+
+Assessment: together with the current-tree review, zero high-risk historical filenames, and no binary/media/vendor bundle, this closes B5 for the defined redistribution/provenance audit scope. This is not a general legal opinion; it is a repository-publication screening result.
 
 ### Releases
 
@@ -124,7 +138,7 @@ GitHub documentation states that rulesets/protected branches are available for p
 
 Gitleaks 8.30.1 completed successfully with zero findings against the isolated audit clone, all current refs, and fetched GitHub PR-head refs at the audited baseline SHA.
 
-This clears the required scanner gate only. GitHub-hosted metadata and redistribution review remain separate.
+This clears the required scanner gate only. GitHub-hosted metadata and other non-Git surfaces remain separate.
 
 ### B2 — Project license decision unresolved
 
@@ -159,15 +173,11 @@ Required close condition:
 - classify each environment/private-data finding;
 - do not claim deletion from the Git tree removes platform-hosted copies.
 
-### B5 — Historical redistribution review incomplete
+### B5 — Historical redistribution review — CLEARED for audit scope
 
-Current `main` tree inventory contains no obvious vendored binary/media asset class. The all-ref object-name inventory found 56 unique historical paths and zero paths matching the current secret/high-risk-binary filename pattern.
+The current tree contained no obvious vendored binary/media asset class. The all-ref historical path inventory found 56 unique paths with zero hits for the secret/high-risk-binary filename pattern. A follow-up historical text indicator pass scanned 213 reachable commits and matched only the three Issue #33 public-readiness/audit documents listed above.
 
-Required close condition:
-
-- run a historical text indicator pass for copyright/license/vendor/third-party markers across all reachable commits;
-- manually classify any matched paths/content provenance;
-- resolve redistribution uncertainty before publication.
+Assessment: no unresolved third-party/vendor/copyright redistribution indicator remains in the defined Git-history publication audit scope.
 
 ## Non-blocking observations
 
@@ -176,6 +186,7 @@ Required close condition:
 - Gitleaks full-history scan passed for the audited all-ref + PR-head set.
 - Historical author email `oimus1976@gmail.com` is explicitly accepted by the human owner for public disclosure.
 - Historical object-name screening found 56 unique paths and zero filename-pattern hits for the current risk set.
+- Historical text indicator screening across 213 reachable commits surfaced only the repository's own Issue #33 public-readiness/audit wording; B5 is cleared for this audit scope.
 - There are no GitHub Releases at audit time.
 - Current `main` tree does not show an obvious third-party binary/media bundle.
 - Public visibility would make GitHub Free ruleset/branch-protection features available, subject to post-change authoritative verification.
@@ -189,6 +200,6 @@ For this repository, Issue #33 state is therefore recorded in this audit documen
 
 ## Next evidence step
 
-Run the historical text indicator pass from the same isolated audit clone and classify any copyright/license/vendor/third-party matches. If that produces no unresolved provenance concern, close B5 and move to the GitHub-hosted Actions surface (B3).
+Move to the GitHub-hosted Actions surface (B3): inventory all retained workflow runs and artifacts, then locally screen retained logs without uploading a raw combined log archive.
 
-Until B2–B5 are closed, terminal state remains `BLOCKED`.
+Until B2–B4 are closed, terminal state remains `BLOCKED`.
