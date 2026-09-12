@@ -389,3 +389,21 @@ Topic branch/worktree deletion is not required merely because a PR merged. The v
 If local closeout fails, preserve intentional local work first. Report the unresolved local state and remediate it explicitly; do not convert a failed closeout check into permission for destructive cleanup.
 
 A task may be **merged but locally not closed out**. Keep those facts distinct in completion summaries.
+
+## 23. Hosted CI unavailability is not test success or code failure
+
+Provider-hosted CI can become unavailable for reasons independent of the proposed code, including account Actions-minute quota, billing restrictions, or service availability.
+
+When hosted CI is unavailable for such a provider/account condition:
+
+1. do not report the run as a code/test failure unless job evidence actually reaches and fails the project check;
+2. do not report local verification as `GitHub Actions SUCCESS` or equivalent provider-hosted success;
+3. do not repeatedly rerun hosted jobs while the same quota/account condition remains;
+4. record the hosted-CI condition explicitly as unavailable/blocked with the known reason;
+5. when continuing is justified, use an exact-head local verification fallback that records repository, branch, full HEAD, commands, native exit status, environment facts that materially affect the checks, and dedicated log location, and runs the project-defined equivalent tests plus local baseline/policy checks;
+6. keep hosted CI evidence and local fallback evidence as distinct facts;
+7. do not let fallback evidence bypass independent review, required real-boundary smoke, C1/C2 comprehension, or any human-final Ready/merge/deploy/release decision.
+
+For `HIGH_IMPACT`, a quota fallback is an availability exception, not a downgrade of verification intent. If the change materially depends on the hosted runner environment itself, local fallback cannot establish that runner-specific fact and the corresponding acceptance claim remains blocked until an appropriate real boundary is available.
+
+When hosted CI becomes available again, return to the normal hosted exact-head verification path. See `docs/GITHUB_ACTIONS_QUOTA_FALLBACK.md` for the operator procedure and adoption guidance.
