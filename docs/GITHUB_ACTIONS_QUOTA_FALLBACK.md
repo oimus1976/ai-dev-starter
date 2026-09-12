@@ -34,9 +34,11 @@ Minimum evidence:
 
 Use a dedicated ignored/temp log directory rather than scattering verification files in the temp-directory root. A suitable Windows convention is `%TEMP%\<project>-logs\<workstream-or-purpose>\...`. If a project requires durable tracked verification evidence, follow that repository's documented evidence location instead. Never put secrets/private data into the log merely to satisfy this procedure.
 
+A successful exact-head fallback requires a clean worktree before the checks and still-clean, unchanged HEAD afterwards. A dirty worktree may be useful diagnostic evidence, but it is not exact-head verification because local modifications can change the behavior being tested.
+
 ### PowerShell pattern
 
-For a copy/paste procedure in an interactive PowerShell session, run the whole attempt inside one explicit script block. Check `$LASTEXITCODE` immediately after every native command whose success matters. Do not use `exit` merely to stop the procedure, because that terminates the interactive shell. Emit the success marker only once, at the successful end of the guarded block.
+For a copy/paste procedure in an interactive PowerShell session, run the whole attempt inside one explicit script block. Check `$LASTEXITCODE` immediately after every native command whose success matters. Record the command, output, and native exit code in the log. Do not use `exit` merely to stop the procedure, because that terminates the interactive shell. Emit the success marker only once, at the successful end of the guarded block.
 
 ```powershell
 & {
@@ -47,48 +49,89 @@ For a copy/paste procedure in an interactive PowerShell session, run the whole a
     New-Item -ItemType Directory -Force -Path $logDir | Out-Null
     $log = Join-Path $logDir "local-ci-$stamp.log"
 
+    "COMMAND=git remote get-url origin" | Tee-Object -FilePath $log
     $repo = git remote get-url origin 2>&1
     $code = $LASTEXITCODE
-    $repo | Tee-Object -FilePath $log
+    $repo | Tee-Object -FilePath $log -Append
+    "EXIT_CODE=$code" | Tee-Object -FilePath $log -Append
     if ($code -ne 0) { throw "git remote get-url origin failed; see $log" }
+    "REPOSITORY=$(($repo | Out-String).Trim())" | Tee-Object -FilePath $log -Append
 
+    "COMMAND=git branch --show-current" | Tee-Object -FilePath $log -Append
     $branch = git branch --show-current 2>&1
     $code = $LASTEXITCODE
     $branch | Tee-Object -FilePath $log -Append
+    "EXIT_CODE=$code" | Tee-Object -FilePath $log -Append
     if ($code -ne 0) { throw "git branch --show-current failed; see $log" }
+    $branchText = ($branch | Out-String).Trim()
+    if ([string]::IsNullOrWhiteSpace($branchText)) { throw "detached HEAD is not accepted for this fallback; see $log" }
+    "BRANCH=$branchText" | Tee-Object -FilePath $log -Append
 
+    "COMMAND=git rev-parse HEAD" | Tee-Object -FilePath $log -Append
     $head = git rev-parse HEAD 2>&1
     $code = $LASTEXITCODE
     $head | Tee-Object -FilePath $log -Append
+    "EXIT_CODE=$code" | Tee-Object -FilePath $log -Append
     if ($code -ne 0) { throw "git rev-parse HEAD failed; see $log" }
+    $headText = ($head | Out-String).Trim()
+    "HEAD=$headText" | Tee-Object -FilePath $log -Append
 
-    "status:" | Tee-Object -FilePath $log -Append
-    git status --short --branch *>&1 | Tee-Object -FilePath $log -Append
+    "COMMAND=git status --porcelain=v1 --untracked-files=all" | Tee-Object -FilePath $log -Append
+    $status = git status --porcelain=v1 --untracked-files=all 2>&1
     $code = $LASTEXITCODE
+    $status | Tee-Object -FilePath $log -Append
+    "EXIT_CODE=$code" | Tee-Object -FilePath $log -Append
     if ($code -ne 0) { throw "git status failed; see $log" }
+    if ($status) { throw "working tree is not clean; exact-head verification blocked; see $log" }
+    "WORKTREE_CLEAN=true" | Tee-Object -FilePath $log -Append
 
     # Replace these with the repository's real CI-equivalent checks.
+    "COMMAND=python -m unittest discover -s tests -v" | Tee-Object -FilePath $log -Append
     python -m unittest discover -s tests -v *>&1 | Tee-Object -FilePath $log -Append
     $code = $LASTEXITCODE
+    "EXIT_CODE=$code" | Tee-Object -FilePath $log -Append
     if ($code -ne 0) { throw "unit tests failed; see $log" }
 
+    "COMMAND=python -m compileall -q ." | Tee-Object -FilePath $log -Append
     python -m compileall -q . *>&1 | Tee-Object -FilePath $log -Append
     $code = $LASTEXITCODE
+    "EXIT_CODE=$code" | Tee-Object -FilePath $log -Append
     if ($code -ne 0) { throw "compile check failed; see $log" }
 
+    "COMMAND=python scripts/verify_repo.py --repository <owner/repo>" | Tee-Object -FilePath $log -Append
     python scripts/verify_repo.py --repository "<owner/repo>" *>&1 |
         Tee-Object -FilePath $log -Append
     $code = $LASTEXITCODE
+    "EXIT_CODE=$code" | Tee-Object -FilePath $log -Append
     if ($code -ne 0) { throw "baseline policy check failed; see $log" }
 
+    "COMMAND=git rev-parse HEAD" | Tee-Object -FilePath $log -Append
+    $postHead = git rev-parse HEAD 2>&1
+    $code = $LASTEXITCODE
+    $postHead | Tee-Object -FilePath $log -Append
+    "EXIT_CODE=$code" | Tee-Object -FilePath $log -Append
+    if ($code -ne 0) { throw "post-check HEAD read failed; see $log" }
+    $postHeadText = ($postHead | Out-String).Trim()
+    if ($postHeadText -ne $headText) { throw "HEAD changed during verification; see $log" }
+
+    "COMMAND=git status --porcelain=v1 --untracked-files=all" | Tee-Object -FilePath $log -Append
+    $postStatus = git status --porcelain=v1 --untracked-files=all 2>&1
+    $code = $LASTEXITCODE
+    $postStatus | Tee-Object -FilePath $log -Append
+    "EXIT_CODE=$code" | Tee-Object -FilePath $log -Append
+    if ($code -ne 0) { throw "post-check git status failed; see $log" }
+    if ($postStatus) { throw "working tree changed during verification; see $log" }
+
+    "POST_HEAD=$postHeadText" | Tee-Object -FilePath $log -Append
+    "POST_WORKTREE_CLEAN=true" | Tee-Object -FilePath $log -Append
     "LOCAL_EXACT_HEAD_VERIFICATION=PASS" | Tee-Object -FilePath $log -Append
     "log=$log"
 }
 ```
 
-The outer script block is deliberate. An exception inside it prevents later mutation/check/success statements in this pasted procedure from running. This PR applies that safety property to this example only; the reusable cross-repository interactive PowerShell contract is tracked separately in Issue #29.
+The outer script block is deliberate. An exception inside it prevents later check/success statements in this pasted procedure from running. This PR applies that safety property to this example only; the reusable cross-repository interactive PowerShell contract is tracked separately in Issue #29.
 
-Do not mechanically copy Python commands to a non-Python project. The project-specific CI workflow remains the best reference for which local commands are equivalent.
+Do not mechanically copy Python commands to a non-Python project. The project-specific CI workflow remains the best reference for which local commands are equivalent. Add project-specific environment facts to the log when they materially affect the checks.
 
 ## 3. Evidence language
 
