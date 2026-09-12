@@ -40,15 +40,37 @@ Assessment: current workflow shape is a good public/fork baseline, but historica
 
 GitHub API inventory reported 167 workflow runs at the time of the audit. The latest runs are currently failing because hosted Actions execution is unavailable; this audit does not reinterpret those failures as code evidence.
 
+Draft PR #34 run #155 (`34679706627`) reported all three jobs as failed, but the `baseline-policy` job contained zero executed steps. That is consistent with the existing hosted-runner availability/quota condition rather than an executed documentation/test failure.
+
 GitHub documents that Actions history and logs become visible when a private repository is converted to public. Therefore retained historical run logs are a required publication surface, not an optional cleanup task.
 
 Assessment: `BLOCKED` until all retained run logs and any non-expired artifacts are screened for publication-sensitive data.
 
-### Issues / local-path evidence
+### Issues / PR discussion evidence
 
-Issue search found real absolute Windows paths in existing issue discussion, including `C:\Users\oimus\...` topology evidence in Issue #17. This is not a credential finding, but it proves that GitHub-hosted discussion contains environment-specific data outside the Git tree.
+Targeted GitHub search found no Issue/PR hits for obvious GitHub token prefixes (`github_pat_`, `ghp_`), `BEGIN PRIVATE KEY`, or `@gmail.com`. This is a limited screening result, not proof of absence in attachments, logs, edits, or arbitrary historical text.
 
-Assessment: each such finding must be classified as intentionally public, redacted/removed, or blocking. Current search is not yet a complete Issue/PR/attachment audit.
+Real absolute Windows paths are definitely present in GitHub-hosted discussion:
+
+- Issue #17 records `C:\Users\oimus\...` worktree topology;
+- PR #13 contains a qualification comment naming local clone `C:\Users\oimus\ai-dev-starter`;
+- PR #15 contains a qualification comment naming `C:\Users\oimus\ai-dev-starter-issue14` and command lines using that path.
+
+These are not credential findings, but they prove that publication-sensitive environment metadata exists outside the Git tree.
+
+Assessment: each such finding must be classified as intentionally public, redacted/removed, or blocking. Current targeted search is not yet a complete Issue/PR/review/attachment audit.
+
+### Current branches / all-ref surface
+
+GitHub reported 17 current branches at audit time, including merged/older topic branches, current workstreams, and two Jules branches. None is protected while the repository remains private under the current plan.
+
+Assessment: publication review must cover **all refs**, not only `main`. The local full-history scanner therefore uses `--all --full-history`. Branch deletion is not implied by this audit: deleting remote branches is a separate protected/destructive effect and is unnecessary if their content is acceptable for publication.
+
+### Current tree / redistribution screening
+
+The recursive tree for audited `main` consists of Markdown/TOML/YAML/Python source and tests; no obvious current vendored binary, media, font, model/data bundle, or third-party asset directory was identified in the root/tree inventory.
+
+Assessment: this reduces the current-tree redistribution concern but does not clear deleted historical objects or copied third-party text. B5 remains open until the all-history object inventory is reviewed.
 
 ### Releases
 
@@ -72,7 +94,7 @@ Assessment: full `git log --all` author/email/message review is still required l
 
 ### B1 — Full-history secret scan not yet executed locally
 
-The GitHub-side current-tree screening performed before this Issue did not find obvious GitHub-token/private-key/client-secret/current-user-path patterns in current `main`, but that is not sufficient evidence.
+The GitHub-side current-tree and Issue/PR screening did not find obvious GitHub-token/private-key patterns, but that is not sufficient evidence.
 
 Required close condition:
 
@@ -105,7 +127,7 @@ Required close condition:
 
 ### B4 — GitHub-hosted discussion/attachments audit incomplete
 
-Issue #17 proves environment-specific paths exist in discussion. PR bodies/reviews/comments and attachments have not yet received a complete publication classification.
+Known environment-specific path findings now include Issue #17 and PR qualification comments in #13 and #15. Targeted token/private-key/email-pattern searches returned no hits, but arbitrary comments, reviews, edits, images, and attachments have not yet received complete publication classification.
 
 Required close condition:
 
@@ -115,7 +137,7 @@ Required close condition:
 
 ### B5 — Historical redistribution review incomplete
 
-No obvious third-party binary/vendor payload was identified in the current root inspection, but deleted historical paths and historical copied material are not yet cleared.
+Current `main` tree inventory contains no obvious vendored binary/media asset class, but deleted historical paths and historical copied material are not yet cleared.
 
 Required close condition:
 
@@ -127,6 +149,7 @@ Required close condition:
 - The repository is already written as a reusable starter rather than a personal-data store.
 - Current workflow permissions and checkout behavior are intentionally narrow.
 - There are no GitHub Releases at audit time.
+- Current `main` tree does not show an obvious third-party binary/media bundle.
 - Public visibility would make GitHub Free ruleset/branch-protection features available, subject to post-change authoritative verification.
 - Public visibility would also remove private-repository GitHub-hosted Actions minute pressure for standard runners; that benefit is secondary to the publication-safety gate.
 
