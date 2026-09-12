@@ -4,21 +4,22 @@ Issue: #33
 
 ## Terminal state
 
-`READY_FOR_HUMAN_GATE`
+`PUBLISHED_VERIFIED`
 
-All repository-specific publication blockers B1–B5 are cleared for their defined audit scopes. This state does **not** authorize changing repository visibility, marking PR #34 Ready, or merging it.
-
-This document is the final tracked audit-state change on the Issue #33 branch. Before any human Ready or visibility action, perform one **read-only exact-head verification of this state commit itself**. If that verification fails or the branch moves afterward, treat the repository as `BLOCKED` again until refreshed.
+The repository was audited while private, passed the human publication gate, was changed to public visibility, and completed post-publication verification. The public repository now has an active `protect-main` repository ruleset protecting `refs/heads/main`.
 
 ## Audit target
 
 - Repository: `oimus1976/ai-dev-starter`
-- Visibility observed throughout audit: `private`
+- Visibility during pre-publication audit: `private`
+- Visibility after human publication gate: `public`
 - Default branch: `main`
 - Main SHA observed at audit start: `794aa1528f0b55fa077364fc4f12397eee5276da`
+- Published/verified main SHA: `84607eda92be319e7aacd10ba11a209771d5abef`
+- Published/verified main tree SHA: `48f0a237dfc8df8a7ee24e90c1aee00478f16499`
 - Repository role: reusable/template AI-assisted development baseline
 - Human license decision: MIT License
-- Root `LICENSE`: present on the Issue #33 branch with `Copyright (c) 2026 Sumio Nishioka`
+- Root `LICENSE`: present with `Copyright (c) 2026 Sumio Nishioka`
 
 ## Publication-surface evidence
 
@@ -31,7 +32,8 @@ Completed evidence:
 - initial full-history scan: PASS / exit `0`;
 - final pre-state refresh at PR head `a96aeb6607c1df5922fb6142e0c87a0aff69d5ea`: `HEAD_EXACT=True`;
 - branch diff check at that head: `DIFF_EXACT=True`;
-- final pre-state Gitleaks full-history refresh: exit `0`.
+- final pre-state Gitleaks full-history refresh: exit `0`;
+- final human-gate refresh at PR head `2fbd960062524d611c66079dcd493cc81f288f17`: `HEAD_EXACT=True`, `DIFF_EXACT=True`, Gitleaks exit `0`, artifacts `0`, Releases `0`.
 
 The generated Gitleaks JSON reports remained local and were not uploaded or pasted into shared discussion.
 
@@ -50,9 +52,9 @@ Human owner decision: `oimus1976@gmail.com` author metadata is **accepted for pu
 
 ### B2 — Project license — CLEARED
 
-The repository is explicitly designed for reuse. The human owner selected the **MIT License** and a standard root `LICENSE` was added on the Issue #33 branch.
+The repository is explicitly designed for reuse. The human owner selected the **MIT License** and a standard root `LICENSE` was added before publication.
 
-Assessment: reusable/open-source rights are explicit. License choice is complete; visibility remains a separate human-final gate.
+Assessment: reusable/open-source rights are explicit and GitHub recognizes the repository license as MIT.
 
 ### B3 — GitHub Actions logs/artifacts — CLEARED for retained surface
 
@@ -77,7 +79,17 @@ Final refresh after Issue #33 branch updates:
 - every one of those six runs had three jobs with `steps=null` / zero executed steps;
 - therefore no new executed log surface was introduced after the bulk log scan.
 
-The `failure` conclusions on these zero-step runs are consistent with the known hosted-runner/quota availability condition and are not treated as code/test evidence.
+The pre-publication `failure` conclusions on these zero-step runs were consistent with the hosted-runner/quota availability condition and were not treated as code/test evidence.
+
+Post-publication Actions verification:
+
+- the final pre-publication failed run `34690218786` was re-run after visibility changed to public;
+- all three jobs executed normally and completed `success`:
+  - `baseline-policy`;
+  - `canonical-closeout-platform (windows-latest)`;
+  - `canonical-closeout-platform (macos-latest)`.
+
+Assessment: the private-repository hosted-runner/quota start failure was no longer present after publication, and the canonical public CI baseline executed successfully.
 
 ### B4 — GitHub-hosted discussion / attachment references — CLEARED for audited surface
 
@@ -117,15 +129,17 @@ The only matched paths were:
 
 Those hits were the repository's own Issue #33 readiness/audit wording. No unresolved third-party source/test/config/vendor path was identified. The subsequently added MIT `LICENSE` is intentional first-party project licensing metadata.
 
-### Releases
+### Releases / Pages / package surface
 
-The final local helper reported `RELEASE_COUNT=1`, but authoritative GitHub Releases API readback returned an empty collection `[]`.
+- authoritative GitHub Releases API readback after publication returned `[]` / zero Releases;
+- repository metadata reports `has_pages=false`;
+- no package-publishing workflow, deployment credential, package manifest publication step, or package-release automation was identified in the audited repository/workflow surface.
 
-Assessment: current Releases count is **0**. The local value was a PowerShell array-wrapping/counting artifact, not a real GitHub Release.
+This record does not make claims about unrelated packages owned by the account outside this repository.
 
 ### Current branch scope
 
-At final pre-state head `a96aeb6607c1df5922fb6142e0c87a0aff69d5ea`, the branch diff from `main` was exactly these five files:
+PR #34 changed exactly these five files before publication:
 
 - `CHANGELOG.md`
 - `LICENSE`
@@ -134,6 +148,8 @@ At final pre-state head `a96aeb6607c1df5922fb6142e0c87a0aff69d5ea`, the branch d
 - `docs/audits/ai-dev-starter-public-readiness-2026-09-12.md`
 
 No executable source file or workflow file was changed by PR #34.
+
+PR #34 was squash-merged to `main` as `84607eda92be319e7aacd10ba11a209771d5abef`. Its tree SHA `48f0a237dfc8df8a7ee24e90c1aee00478f16499` matched the audited publication content.
 
 ## Workflow / public-fork boundary
 
@@ -148,11 +164,30 @@ The current `.github/workflows/policy-check.yml` baseline uses:
 
 Assessment: current workflow shape is suitable as the public/fork baseline. Any future introduction of privileged fork-PR execution, `pull_request_target`, secrets, write permissions, deployment authority, or trusted self-hosted runners must receive a fresh trust-boundary review.
 
-## Repository protection
+## Repository protection — VERIFIED
 
-While the repository remains private under the current plan, GitHub ruleset readback returned the plan/visibility limitation rather than an enforceable ruleset.
+After publication, repository ruleset `protect-main` was created and authoritatively read back as ruleset ID `23040722`.
 
-If publication occurs, ruleset/branch-protection creation and authoritative readback are mandatory **post-publication** steps. Protection availability must not be treated as already enforced before the visibility change.
+Verified state:
+
+- target: branch;
+- enforcement: `active`;
+- include: `refs/heads/main`;
+- bypass actors: none;
+- current user bypass: `never`;
+- deletion: prohibited;
+- non-fast-forward / force push: prohibited;
+- pull request required;
+- required approving review count: `0`;
+- review-thread resolution required;
+- allowed merge methods: merge, squash, rebase;
+- strict up-to-date policy: disabled;
+- required status checks:
+  - `baseline-policy`;
+  - `canonical-closeout-platform (windows-latest)`;
+  - `canonical-closeout-platform (macos-latest)`.
+
+The authoritative branch endpoint now reports `main` as `protected=true` while preserving main SHA `84607eda92be319e7aacd10ba11a209771d5abef`.
 
 ## Why PROJECT_STATUS.md is not updated
 
@@ -160,17 +195,18 @@ If publication occurs, ruleset/branch-protection creation and authoritative read
 
 Issue #33 state is therefore recorded in this audit document plus `CHANGELOG.md`.
 
-## Human gate
+## Publication verification
 
-Subject to a clean read-only verification of this final audit-state commit itself, the repository is ready for a human decision on PR #34 Ready/merge and the later private-to-public visibility change.
+Human-final actions were performed explicitly and separately:
 
-The following remain human-final and are **not** authorized by this audit record:
+1. PR #34 was marked Ready by the human owner.
+2. PR #34 was merged by the human owner.
+3. The repository visibility change from private to public was explicitly authorized and performed by the human owner.
+4. Post-publication repository state was authoritatively read back as `visibility=public`, default branch `main`, with main SHA unchanged from the post-merge SHA.
+5. Public hosted Actions were re-run and all three canonical jobs succeeded.
+6. `protect-main` was created and authoritatively read back as active; the branch endpoint reports `main` protected.
+7. Releases remained zero and Pages remained disabled.
 
-- marking PR #34 Ready;
-- merging PR #34;
-- changing repository visibility;
-- rewriting history;
-- deleting branches;
-- deleting or redacting historical GitHub-hosted evidence.
+Terminal assessment: **`PUBLISHED_VERIFIED`**.
 
-After any visibility change, perform authoritative post-publication verification of visibility, default branch, branch/ruleset protection, Actions/fork settings, Releases/packages/Pages exposure, and unauthenticated public access.
+The publication audit is complete. Future changes that materially broaden the public trust boundary—especially secrets/write permissions, privileged fork execution, `pull_request_target`, deployment/package publication, trusted self-hosted runners, or redistribution-sensitive assets—require a fresh targeted review.
