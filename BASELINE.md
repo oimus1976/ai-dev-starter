@@ -283,6 +283,14 @@ Minimum persistent-change target:
 
 If the owner cannot meet the required level, stop feature growth and pay down comprehension debt before accepting more complexity.
 
+### Operator observability
+
+For operations that may run or remain silent long enough that a human cannot reasonably distinguish active work from a hang or freeze, provide sufficient observable liveness or progress state.
+
+Prefer the operation's native progress or liveness mechanism when it is adequate; otherwise use a proportionate alternative.
+
+Lack of stdout/stderr activity alone is not failure evidence. Observability must not replace or weaken the command or tool's authoritative completion and failure semantics.
+
 ## 17. Review finding severity
 
 Use words rather than reverse-numbered `P0/P1/...` labels. The purpose is to make severity understandable without memorizing whether a larger or smaller number is worse.
