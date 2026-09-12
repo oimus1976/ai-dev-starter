@@ -86,7 +86,25 @@ Assessment: publication review must cover **all refs**, not only `main`. The iso
 
 The recursive tree for audited `main` consists of Markdown/TOML/YAML/Python source and tests; no obvious current vendored binary, media, font, model/data bundle, or third-party asset directory was identified in the root/tree inventory.
 
-Assessment: this reduces the current-tree redistribution concern but does not clear deleted historical objects or copied third-party text. B5 remains open until the all-history object inventory is reviewed.
+Assessment: this reduces the current-tree redistribution concern but does not by itself clear copied third-party text. B5 remains open until the historical text/license/vendor indicator scan is reviewed.
+
+### Historical metadata / object-name inventory
+
+The same isolated audit clone was used to inventory Git metadata and historical object names across all refs.
+
+Observed:
+
+- commit records inspected: 211;
+- unique author identities: 3;
+- unique historical paths: 56;
+- paths matching the current credential/secret/high-risk-binary filename pattern: 0;
+- authors were `google-labs-jules[bot]`, `oimus1976`, and `Sumio Nishioka`;
+- the bot uses a GitHub noreply address;
+- commits attributed to `oimus1976` and `Sumio Nishioka` use `oimus1976@gmail.com`.
+
+Human owner decision: the historical `oimus1976@gmail.com` author address is **accepted for public disclosure** for this repository. No history rewrite is required or authorized on account of that address.
+
+Assessment: Git-history privacy concern for the author email is closed by explicit human classification. The zero-risk-path result substantially reduces B5, but does not prove absence of copied third-party/license-restricted text; one historical text indicator pass remains required.
 
 ### Releases
 
@@ -99,12 +117,6 @@ Assessment: no current release assets to audit, subject to refresh immediately b
 The current private repository returned GitHub API `403` for repository rulesets with the message that GitHub Pro is required or the repository must be public. Existing house policy therefore must not be described as server-enforced on current private `main`.
 
 GitHub documentation states that rulesets/protected branches are available for public repositories on GitHub Free. If publication occurs, protection creation and authoritative readback are mandatory post-publication steps; availability must not be assumed in advance.
-
-### Commit metadata
-
-GitHub commit metadata currently exposes the owner author identity/email to repository readers. That metadata will become public if repository visibility changes.
-
-Assessment: full `git log --all` author/email/message review is still required locally. If historical metadata is unacceptable, any history rewrite is a separate consequential human decision.
 
 ## Current blockers
 
@@ -149,11 +161,12 @@ Required close condition:
 
 ### B5 — Historical redistribution review incomplete
 
-Current `main` tree inventory contains no obvious vendored binary/media asset class, but deleted historical paths and historical copied material are not yet cleared.
+Current `main` tree inventory contains no obvious vendored binary/media asset class. The all-ref object-name inventory found 56 unique historical paths and zero paths matching the current secret/high-risk-binary filename pattern.
 
 Required close condition:
 
-- review `git rev-list --objects --all` inventory and any binary/vendor findings;
+- run a historical text indicator pass for copyright/license/vendor/third-party markers across all reachable commits;
+- manually classify any matched paths/content provenance;
 - resolve redistribution uncertainty before publication.
 
 ## Non-blocking observations
@@ -161,6 +174,8 @@ Required close condition:
 - The repository is already written as a reusable starter rather than a personal-data store.
 - Current workflow permissions and checkout behavior are intentionally narrow.
 - Gitleaks full-history scan passed for the audited all-ref + PR-head set.
+- Historical author email `oimus1976@gmail.com` is explicitly accepted by the human owner for public disclosure.
+- Historical object-name screening found 56 unique paths and zero filename-pattern hits for the current risk set.
 - There are no GitHub Releases at audit time.
 - Current `main` tree does not show an obvious third-party binary/media bundle.
 - Public visibility would make GitHub Free ruleset/branch-protection features available, subject to post-change authoritative verification.
@@ -174,6 +189,6 @@ For this repository, Issue #33 state is therefore recorded in this audit documen
 
 ## Next evidence step
 
-Review commit metadata and historical object names from the same isolated audit clone. This closes the remaining Git-history privacy/redistribution questions without mixing the evidence with the development checkout.
+Run the historical text indicator pass from the same isolated audit clone and classify any copyright/license/vendor/third-party matches. If that produces no unresolved provenance concern, close B5 and move to the GitHub-hosted Actions surface (B3).
 
 Until B2–B5 are closed, terminal state remains `BLOCKED`.
