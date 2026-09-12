@@ -18,13 +18,13 @@ When the owner has an explicit GitHub quota/billing notification and the runs st
 
 ## 2. Exact-head local fallback
 
-When project progress should continue while hosted CI is unavailable, use the same exact revision intended for acceptance.
+When project progress should continue while hosted CI is unavailable, use the same exact revision intended for acceptance. Establish that intended full commit SHA from the authoritative PR/branch state before running the local fallback; do not let the local checkout define its own acceptance target.
 
 Minimum evidence:
 
 1. repository identity;
 2. branch name;
-3. exact full HEAD SHA;
+3. authoritative expected full HEAD SHA and observed local full HEAD SHA;
 4. dirty/clean working-tree status;
 5. project unit/regression command(s) and native exit code;
 6. syntax/compile/static command(s) applicable to the project and native exit code;
@@ -34,22 +34,29 @@ Minimum evidence:
 
 Use a dedicated ignored/temp log directory rather than scattering verification files in the temp-directory root. A suitable Windows convention is `%TEMP%\<project>-logs\<workstream-or-purpose>\...`. If a project requires durable tracked verification evidence, follow that repository's documented evidence location instead. Never put secrets/private data into the log merely to satisfy this procedure.
 
-A successful exact-head fallback requires a clean worktree before the checks and still-clean, unchanged HEAD afterwards. A dirty worktree may be useful diagnostic evidence, but it is not exact-head verification because local modifications can change the behavior being tested.
+A successful exact-head fallback requires the observed local HEAD to equal the independently established expected SHA, a clean worktree before the checks, and still-clean, unchanged HEAD afterwards. A dirty worktree may be useful diagnostic evidence, but it is not exact-head verification because local modifications can change the behavior being tested.
 
 ### PowerShell pattern
 
-For a copy/paste procedure in an interactive PowerShell session, run the whole attempt inside one explicit script block. Check `$LASTEXITCODE` immediately after every native command whose success matters. Record the command, output, and native exit code in the log. Do not use `exit` merely to stop the procedure, because that terminates the interactive shell. Emit the success marker only once, at the successful end of the guarded block.
+For a copy/paste procedure in an interactive PowerShell session, run the whole attempt inside one explicit script block. Before running it, replace `<full-sha-intended-for-acceptance>` with the full SHA obtained from the authoritative PR/branch state. Check `$LASTEXITCODE` immediately after every native command whose success matters. Record the command, output, and native exit code in the log. Do not use `exit` merely to stop the procedure, because that terminates the interactive shell. Emit the success marker only once, at the successful end of the guarded block.
 
 ```powershell
 & {
     $ErrorActionPreference = "Stop"
+
+    $expectedHead = "<full-sha-intended-for-acceptance>"
+    if ($expectedHead -eq "<full-sha-intended-for-acceptance>") {
+        throw "replace the expected HEAD placeholder with the authoritative full SHA before running"
+    }
 
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $logDir = Join-Path $env:TEMP "<project>-logs\actions-quota-fallback"
     New-Item -ItemType Directory -Force -Path $logDir | Out-Null
     $log = Join-Path $logDir "local-ci-$stamp.log"
 
-    "COMMAND=git remote get-url origin" | Tee-Object -FilePath $log
+    "EXPECTED_HEAD=$expectedHead" | Tee-Object -FilePath $log
+
+    "COMMAND=git remote get-url origin" | Tee-Object -FilePath $log -Append
     $repo = git remote get-url origin 2>&1
     $code = $LASTEXITCODE
     $repo | Tee-Object -FilePath $log -Append
@@ -75,6 +82,7 @@ For a copy/paste procedure in an interactive PowerShell session, run the whole a
     if ($code -ne 0) { throw "git rev-parse HEAD failed; see $log" }
     $headText = ($head | Out-String).Trim()
     "HEAD=$headText" | Tee-Object -FilePath $log -Append
+    if ($headText -ne $expectedHead) { throw "local HEAD does not match authoritative expected HEAD; see $log" }
 
     "COMMAND=git status --porcelain=v1 --untracked-files=all" | Tee-Object -FilePath $log -Append
     $status = git status --porcelain=v1 --untracked-files=all 2>&1
@@ -112,7 +120,7 @@ For a copy/paste procedure in an interactive PowerShell session, run the whole a
     "EXIT_CODE=$code" | Tee-Object -FilePath $log -Append
     if ($code -ne 0) { throw "post-check HEAD read failed; see $log" }
     $postHeadText = ($postHead | Out-String).Trim()
-    if ($postHeadText -ne $headText) { throw "HEAD changed during verification; see $log" }
+    if ($postHeadText -ne $expectedHead) { throw "HEAD no longer matches authoritative expected HEAD; see $log" }
 
     "COMMAND=git status --porcelain=v1 --untracked-files=all" | Tee-Object -FilePath $log -Append
     $postStatus = git status --porcelain=v1 --untracked-files=all 2>&1
