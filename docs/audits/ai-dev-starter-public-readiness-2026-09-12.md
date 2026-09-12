@@ -4,9 +4,9 @@ Issue: #33
 
 ## Terminal state
 
-`BLOCKED`
+`BLOCKED — final exact-head refresh pending`
 
-This is a read-only publication audit. It does **not** authorize changing repository visibility.
+All repository-specific publication blockers B1–B5 are cleared for their defined audit scopes. This document still does **not** authorize changing repository visibility. Before a human Ready or visibility decision, the audit must be refreshed against the exact PR head / intended publication SHA because the Issue #33 branch moved while recording the MIT license decision and final audit state.
 
 ## Audit target
 
@@ -16,6 +16,8 @@ This is a read-only publication audit. It does **not** authorize changing reposi
 - Main SHA observed at audit start: `794aa1528f0b55fa077364fc4f12397eee5276da`
 - Repository role: reusable/template AI-assisted development baseline
 - GitHub license metadata at audit start: no project license detected (`license: null`)
+- Human license decision: MIT License
+- Root `LICENSE`: added on the Issue #33 branch with `Copyright (c) 2026 Sumio Nishioka`
 
 The implementation branch for Issue #33 was created from the exact main SHA above. Publication must be re-checked against the exact intended publication SHA immediately before the human visibility gate.
 
@@ -42,7 +44,7 @@ An isolated audit clone was created under `%TEMP%` from `oimus1976/ai-dev-starte
 
 Observed:
 
-- `AUDIT_HEAD=794aa1528f0b55fa077364fc4f12397eee5276da`
+- initial `AUDIT_HEAD=794aa1528f0b55fa077364fc4f12397eee5276da`
 - Gitleaks version: `8.30.1`
 - scan mode: `gitleaks git`
 - log opts: `--all --full-history`
@@ -50,7 +52,7 @@ Observed:
 - result: `GITLEAKS_HISTORY=PASS`
 - exit code: `0`
 
-Assessment: B1 is cleared for the Gitleaks scanner/ruleset scope against current refs plus fetched PR-head refs. The generated JSON report remains local and was not uploaded or pasted into shared discussion.
+Assessment: B1 is cleared for the Gitleaks scanner/ruleset scope against current refs plus fetched PR-head refs as of the completed scan. The generated JSON report remains local and was not uploaded or pasted into shared discussion. A final exact-head refresh is still required after all Issue #33 branch changes are complete.
 
 ### Git metadata / object-name inventory
 
@@ -82,7 +84,7 @@ Observed:
 - current `main` tree contains no obvious vendored binary/media/font/model/data bundle or third-party asset directory;
 - GitHub currently has no Releases for this repository.
 
-Assessment: B5 is cleared for the defined repository-publication provenance/redistribution screening scope. This is not a general legal opinion.
+Assessment: B5 is cleared for the defined repository-publication provenance/redistribution screening scope. The subsequently added MIT `LICENSE` is intentional first-party licensing metadata, not an unresolved third-party provenance finding. This is not a general legal opinion.
 
 ### GitHub Actions publication surface — B3 cleared for retained surface
 
@@ -90,7 +92,7 @@ The retained GitHub Actions surface was inventoried and screened without creatin
 
 Observed:
 
-- workflow runs currently retained: 174;
+- workflow runs currently retained at the completed inventory: 174;
 - retained artifacts: 0;
 - logs available and scanned: 153 runs;
 - Gitleaks stdin findings across those 153 logs: 0;
@@ -101,7 +103,7 @@ Observed:
 
 The 21 no-log runs were individually checked through the workflow-jobs API. Every run had three jobs and **zero executed steps**. Their job conclusions are `failure`, but there is no executed-step log surface to review. This is consistent with the known GitHub-hosted Actions availability/quota condition and is not treated as code/test evidence.
 
-Assessment: B3 is cleared for the currently retained Actions publication surface: all available logs were scanner-clean, the remaining no-log runs never started a step, and no artifact exists.
+Assessment: B3 is cleared for the retained Actions publication surface observed during the audit. Final publication refresh must confirm no new retained artifact or relevant executed log has appeared since that inventory.
 
 ### Issues / PR discussion evidence — B4 cleared for audited surface
 
@@ -131,33 +133,31 @@ Human owner decision: the six Windows developer-path findings are **accepted for
 
 Assessment: B4 is cleared for the audited GitHub-hosted textual/attachment-reference surface.
 
+### Project licensing — B2 cleared by human decision
+
+The repository is explicitly designed for reuse. The human owner selected the **MIT License** for public OSS reuse, and a standard MIT `LICENSE` file was added at the repository root on the Issue #33 branch.
+
+Assessment: B2 is cleared. The license grants broad reuse, modification, redistribution, sublicensing, and sale rights subject to preservation of the copyright and license notice. This license choice does not itself authorize publication; visibility remains a separate human-final gate.
+
 ### Repository protection
 
 The current private repository returned GitHub API `403` for repository rulesets under the current plan/visibility combination. Existing house policy must therefore not be described as server-enforced on current private `main`.
 
 If publication occurs, ruleset/branch-protection creation and authoritative readback are mandatory post-publication steps. Availability must not be assumed before the visibility change.
 
-## Current blockers
+## Blocker status
 
 ### B1 — Full-history secret scan — CLEARED for scanner scope
 
-Gitleaks 8.30.1 completed with zero findings against the isolated audit clone, all current refs, and fetched GitHub PR-head refs at the audited baseline SHA.
+Gitleaks 8.30.1 completed with zero findings against the isolated audit clone, all current refs, and fetched GitHub PR-head refs at the completed scan point. Final exact-head refresh remains required because the Issue #33 branch moved afterward.
 
-### B2 — Project license decision unresolved
+### B2 — Project license — CLEARED
 
-The repository is explicitly designed for reuse, but GitHub currently reports no project license.
-
-Required close condition:
-
-- human owner decides whether the repository is merely source-visible or intended to grant reusable/open-source rights;
-- if OSS reuse is intended, choose and add the project license through a reviewed tracked change;
-- review dependency/third-party notices separately.
-
-No license is selected by this audit.
+Human owner selected MIT and a root `LICENSE` was added on the Issue #33 branch.
 
 ### B3 — Actions logs/artifacts — CLEARED for retained surface
 
-Current inventory: 174 runs, zero artifacts. All 153 available logs passed Gitleaks stdin scanning with zero findings. The remaining 21 runs had no log and were confirmed through API readback to contain zero executed steps. Partial logs, tool errors, and API classification errors were zero.
+Inventory observed 174 runs, zero artifacts. All 153 available logs passed Gitleaks stdin scanning with zero findings. The remaining 21 runs had no log and were confirmed through API readback to contain zero executed steps. Partial logs, tool errors, and API classification errors were zero.
 
 ### B4 — GitHub-hosted discussion/attachments — CLEARED for audited surface
 
@@ -165,7 +165,7 @@ All 89 inventoried textual items passed Gitleaks screening with zero findings. N
 
 ### B5 — Historical redistribution review — CLEARED for audit scope
 
-Historical object-name screening found 56 unique paths with zero risk-name hits. A follow-up text-indicator pass scanned 213 reachable commits and surfaced only the repository's own Issue #33 readiness/audit wording.
+Historical object-name screening found 56 unique paths with zero risk-name hits. A follow-up text-indicator pass scanned 213 reachable commits and surfaced only the repository's own Issue #33 readiness/audit wording. The added MIT license is an intentional first-party project license.
 
 ## Non-blocking observations
 
@@ -173,7 +173,8 @@ Historical object-name screening found 56 unique paths with zero risk-name hits.
 - Current workflow permissions and checkout behavior are intentionally narrow.
 - Historical author email `oimus1976@gmail.com` is explicitly accepted by the human owner for public disclosure.
 - Windows developer paths surfaced in Issue/PR discussion are explicitly accepted by the human owner for public disclosure.
-- There are no current GitHub Releases or retained Actions artifacts.
+- There are no current GitHub Releases or retained Actions artifacts at the completed inventory point.
+- MIT was selected specifically to make reuse rights explicit for the reusable starter.
 - Public visibility would remove private-repository GitHub-hosted Actions minute pressure for standard runners; that benefit remains secondary to the publication-safety gate.
 
 ## Why PROJECT_STATUS.md is not updated
@@ -184,6 +185,4 @@ For this repository, Issue #33 state is therefore recorded in this audit documen
 
 ## Next evidence step
 
-Resolve B2 with an explicit human license decision. If OSS reuse is intended, add the chosen license through the tracked Issue #33 branch, then refresh the audit against the exact PR head / intended publication SHA before any human Ready or visibility decision.
-
-Until B2 is closed, terminal state remains `BLOCKED`.
+All repository-specific blockers B1–B5 are cleared. Refresh the isolated audit clone against the exact current PR #34 head / intended publication SHA, rerun the full-history secret scan, confirm the branch diff remains bounded to the public-readiness documentation plus `LICENSE`, and refresh GitHub-hosted Actions/releases/artifact counts. If that exact-head refresh is clean, advance the audit state to `READY_FOR_HUMAN_GATE` without changing visibility or marking the PR Ready automatically.
