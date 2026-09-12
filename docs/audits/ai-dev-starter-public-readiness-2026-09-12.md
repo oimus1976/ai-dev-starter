@@ -36,6 +36,22 @@ Observed:
 
 Assessment: current workflow shape is a good public/fork baseline, but historical workflows and all retained Actions logs still require review before publication.
 
+### Full-history secret scan
+
+An isolated audit clone was created under `%TEMP%` from `oimus1976/ai-dev-starter`, and GitHub `refs/pull/*/head` were fetched into audit-only refs before scanning. The clone resolved the intended publication baseline as:
+
+- `AUDIT_HEAD=794aa1528f0b55fa077364fc4f12397eee5276da`
+- Gitleaks version: `8.30.1`
+- scan mode: `gitleaks git`
+- log opts: `--all --full-history`
+- redaction: `--redact=100`
+- result: `GITLEAKS_HISTORY=PASS`
+- exit code: `0`
+
+Assessment: B1 is cleared for the scanner/ruleset scope against the audited all-ref + fetched PR-head set. This does not prove safety of GitHub-hosted Issues/PR comments/attachments, Actions logs/artifacts, unusual credentials outside Gitleaks rules, personal metadata, or redistribution-sensitive historical material; those surfaces remain separate blockers below.
+
+The generated `gitleaks-history.json` remains local and was not uploaded to GitHub or shared discussion.
+
 ### GitHub Actions publication surface
 
 GitHub API inventory reported 167 workflow runs at the time of the audit. The latest runs are currently failing because hosted Actions execution is unavailable; this audit does not reinterpret those failures as code evidence.
@@ -64,7 +80,7 @@ Assessment: each such finding must be classified as intentionally public, redact
 
 GitHub reported 17 current branches at audit time, including merged/older topic branches, current workstreams, and two Jules branches. None is protected while the repository remains private under the current plan.
 
-Assessment: publication review must cover **all refs**, not only `main`. The local full-history scanner therefore uses `--all --full-history`. Branch deletion is not implied by this audit: deleting remote branches is a separate protected/destructive effect and is unnecessary if their content is acceptable for publication.
+Assessment: publication review must cover **all refs**, not only `main`. The isolated audit clone plus fetched PR-head refs and `--all --full-history` scan cover the intended reachable Git history without requiring branch deletion. Branch deletion remains a separate protected/destructive effect.
 
 ### Current tree / redistribution screening
 
@@ -92,15 +108,11 @@ Assessment: full `git log --all` author/email/message review is still required l
 
 ## Current blockers
 
-### B1 — Full-history secret scan not yet executed locally
+### B1 — Full-history secret scan — CLEARED for scanner scope
 
-The GitHub-side current-tree and Issue/PR screening did not find obvious GitHub-token/private-key patterns, but that is not sufficient evidence.
+Gitleaks 8.30.1 completed successfully with zero findings against the isolated audit clone, all current refs, and fetched GitHub PR-head refs at the audited baseline SHA.
 
-Required close condition:
-
-- run the version-recorded, redacted full-history scan from `docs/PUBLIC_REPOSITORY_READINESS.md` against all refs;
-- review all findings without copying secret values into shared records;
-- rotate/revoke any real credential before any history decision.
+This clears the required scanner gate only. GitHub-hosted metadata and redistribution review remain separate.
 
 ### B2 — Project license decision unresolved
 
@@ -148,6 +160,7 @@ Required close condition:
 
 - The repository is already written as a reusable starter rather than a personal-data store.
 - Current workflow permissions and checkout behavior are intentionally narrow.
+- Gitleaks full-history scan passed for the audited all-ref + PR-head set.
 - There are no GitHub Releases at audit time.
 - Current `main` tree does not show an obvious third-party binary/media bundle.
 - Public visibility would make GitHub Free ruleset/branch-protection features available, subject to post-change authoritative verification.
@@ -161,6 +174,6 @@ For this repository, Issue #33 state is therefore recorded in this audit documen
 
 ## Next evidence step
 
-Run the local exact-SHA history/metadata scan in `docs/PUBLIC_REPOSITORY_READINESS.md` against a checkout of `794aa1528f0b55fa077364fc4f12397eee5276da`, retain the redacted logs locally, and update this record only with categories/results rather than secret values.
+Review commit metadata and historical object names from the same isolated audit clone. This closes the remaining Git-history privacy/redistribution questions without mixing the evidence with the development checkout.
 
-Until B1–B5 are closed, terminal state remains `BLOCKED`.
+Until B2–B5 are closed, terminal state remains `BLOCKED`.
