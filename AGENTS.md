@@ -2,128 +2,99 @@
 
 This repository uses the oimus AI Development Baseline.
 
-## Before editing
+`BASELINE.md` defines durable governance and safety policy. `PROJECT_PROFILE.toml` defines project-specific authority and risk context. `PROJECT_STATUS.md` records current project state.
 
-1. Read `PROJECT_STATUS.md`, `PROJECT_PROFILE.toml`, and relevant ADR/design docs.
-2. Identify the intended work item/PR and target branch.
-3. State the change-specific risk facets and derived risk level: `ROUTINE`, `ELEVATED`, or `HIGH_IMPACT`.
-4. Escalate automatically when the change touches credentials, deployment, destructive I/O, security/authority logic, private data, external writes, workflow permissions, or real platform behavior.
-5. If you cannot establish the target repository/branch/work item, stop before writing.
+## Start from repository evidence
 
-## Editing rules
+Before changing tracked project state:
 
-- Never treat chat history as authoritative project state when repository evidence is available.
-- Do not write to a branch that was not explicitly resolved for the task.
+1. Read `BASELINE.md`, `PROJECT_STATUS.md`, `PROJECT_PROFILE.toml`, and the relevant Issue/PR and ADR/design documentation.
+2. Resolve the intended work item, repository, implementation branch, and scope.
+3. Identify the change-specific risk facets and derive the applicable risk level under `BASELINE.md`.
+
+Do not treat chat history, agent summaries, or copied status text as authoritative when repository or platform evidence is available.
+
+If the repository, work item, or writable branch cannot be established with sufficient confidence, inspect further but do not make tracked changes.
+
+## Autonomy and approval
+
+For requests to review, explain, diagnose, investigate, or plan:
+
+- inspect the relevant repository and platform evidence;
+- report findings and evidence;
+- do not implement changes unless implementation is also requested.
+
+For requests to change, build, fix, or remediate:
+
+- make the requested in-scope changes on the resolved implementation branch;
+- perform relevant non-destructive validation without asking for separate approval;
+- continue through ordinary inspect -> change -> verify -> report steps while the work remains within scope.
+
+Require explicit human authorization before:
+
+- Ready transition;
+- merge;
+- deployment or release where designated human-final;
+- destructive cleanup or irreversible mutation;
+- external writes not already authorized by the task;
+- credential-sensitive effects;
+- material expansion of scope.
+
+Ready and merge are always human-final house policy.
+
+## Change discipline
+
 - Do not use `main` as the normal implementation branch.
-- Keep changes within the declared scope.
-- Preserve unrelated files and existing history.
-- Do not weaken tests merely to make CI pass.
-- Do not expose secrets, credentials, private data, or owner-local artifacts in code, logs, Issues, PRs, or summaries.
-- Treat unsupported/uncertain safety conditions conservatively according to `BASELINE.md`.
+- Keep changes within the declared scope and preserve unrelated work.
+- Do not weaken tests merely to obtain a passing result.
+- Do not expose secrets, credentials, private data, or owner-local artifacts.
+- Apply the escalation, uncertainty, protected-effect, and evidence rules in `BASELINE.md`.
 
-## Claims and evidence
+## Evidence before claims
 
-Your completion statement is a claim, not authority.
+Treat agent completion statements as claims until verified.
 
-Report evidence separately, including as applicable:
+Before reporting a tracked change as complete, establish the applicable evidence from the authority that owns each fact. Include, where relevant:
 
 - branch and exact HEAD;
-- changed paths;
-- test command and result;
-- CI status if independently available;
-- real-boundary smoke environment/result;
-- residual uncertainty.
+- material changed paths;
+- tests and their results;
+- authoritative CI/review state;
+- required real-boundary validation;
+- residual uncertainty or deferred work.
 
-Do not claim Ready, merge, deploy, release, or another protected effect merely because implementation/tests/review succeeded.
+A successful implementation, test, or review does not by itself authorize or prove a protected effect.
 
-## Hosted CI quota/unavailability
+When remediation changes the relevant revision, reassess which prior evidence was invalidated and rerun the evidence required by `BASELINE.md`.
 
-A red/blocked GitHub Actions run is not automatically a code failure. If evidence shows that GitHub-hosted Actions is unavailable because of account minutes/quota, billing restriction, or provider availability:
+If the same `MAJOR` safety invariant remains violated after two remediation attempts, stop patching and perform an architecture/scope review before another attempt.
 
-- classify hosted CI as unavailable/blocked rather than PASS or code FAIL;
-- do not repeatedly rerun the same hosted jobs while the provider/account condition persists;
-- never relabel local verification as `GitHub Actions SUCCESS`;
-- use the exact-head local fallback in `docs/GITHUB_ACTIONS_QUOTA_FALLBACK.md` when continued progress is justified;
-- record repository/branch/full HEAD, commands, exit status, and log location;
-- for `HIGH_IMPACT`, keep independent review, required real-boundary smoke, C2, Ready, and merge as separate gates.
+## Handoff
 
-If correctness specifically depends on the hosted runner environment, local fallback cannot establish that runner-specific claim.
+At a meaningful handoff, explain concisely:
 
-## After review findings
+- what changed and why;
+- what intentionally did not change;
+- what evidence supports the current state;
+- what remains uncertain, deferred, or blocked;
+- which human decision or protected effect comes next.
 
-A remediation creates a new change that may invalidate prior evidence.
+Prefer simplification or documentation when complexity prevents the project owner from reaching the comprehension level required by `BASELINE.md`.
 
-Re-run the evidence required by the change type/risk level. `HIGH_IMPACT` security/authority changes require exact-head revalidation and independent review.
+## Post-merge closeout
 
-If the same `MAJOR` safety invariant survives two remediation attempts, stop patching and request an architecture/scope review.
+Merge status and local worktree closeout are separate facts.
 
-## Human comprehension
+After a tracked PR is human-merged, follow the post-merge closeout procedure defined in `BASELINE.md` and the repository-provided verification/cleanup tools.
 
-Do not optimize only for passing tests.
+When retiring an eligible merged topic worktree, use `python scripts/post_merge_cleanup.py --pr <PR_NUMBER>` as the plan-only first step. After the tool produces an eligible plan, present that specific plan to the human and obtain new, explicit authorization to execute it before running `--execute`. Do not infer execution authorization from an earlier or general request to clean up.
 
-At meaningful handoff points explain concisely:
+Do not use destructive cleanup merely to make a closeout check pass. Preserve intentional local work and report blocked or incomplete closeout state explicitly.
 
-- what changed;
-- why;
-- what did not change;
-- what evidence supports it;
-- what remains uncertain/deferred;
-- what the human must decide next;
-- how the change affects authority, failure/recovery, or operational understanding.
+## Repository-wide branch audit
 
-If the project owner cannot reasonably explain the required C1/C2 concepts after the change, prefer simplification/documentation over more feature work.
+For repository-wide branch inventory/review, use `python scripts/branch_cleanup_audit.py --repository OWNER/REPO` and follow `docs/branch-cleanup-policy.md`.
 
-## Human-final house policy
+The helper is audit-only. Its output is evidence for human review and never deletion authority; review-candidate entries explicitly carry `deletion_authority: false`. Any destructive executor is a separate authority boundary tracked in Issue #22.
 
-Ready and merge are human-final. Do not perform or infer them from another approval.
-
-## Post-merge local closeout
-
-Human merge completion and local closeout are separate facts.
-
-When a tracked PR used a local checkout/worktree, do not report the work item as locally closed out until GitHub independently confirms the merge and the applicable local closeout path passes.
-
-### Non-destructive verification
-
-`scripts/verify_local_closeout.py` remains the non-destructive diagnostic/verifier.
-
-If the PR checkout itself is the canonical checkout used for the next task, run:
-
-`python scripts/verify_local_closeout.py`
-
-The verifier requires fresh canonical remote state, canonical `main` (unless project-specific override), a clean tracked+untracked worktree, no merge/rebase/cherry-pick/revert/bisect in progress, and exact local/canonical-remote HEAD match.
-
-If the PR used a linked topic worktree while canonical `main` remains checked out in another worktree:
-
-1. independently read the merged PR's exact head SHA from GitHub;
-2. in the topic worktree run `python scripts/verify_local_closeout.py --expected-pr-head <FULL_PR_HEAD_SHA>`;
-3. require the topic worktree to be clean, have no Git operation in progress, and still be at that confirmed PR head;
-4. require the separately checked-out canonical worktree to be clean and exactly synchronized to fresh `origin/main`.
-
-A successful topic-worktree verification means the task worktree has no unaccounted local residue and the canonical worktree is the next-work entry point. It does **not** mean the topic worktree itself became `main`.
-
-The verifier may `git fetch` to establish freshness, but it must not reset, stash, discard files, delete branches/worktrees, or perform other destructive cleanup merely to make the gate pass.
-
-### Fail-closed safe cleanup
-
-When the merged task's closeout procedure includes retirement of its topic worktree, use the separate cleanup tool. The normal first command is plan-only:
-
-`python scripts/post_merge_cleanup.py --pr <PR_NUMBER>`
-
-The cleanup tool must perform its own fresh GitHub PR read through authenticated `gh`; operator-supplied merge claims are not sufficient. Its cleanup identity is the same-repository merged PR's exact head branch and head SHA.
-
-Only an eligible plan may proceed to:
-
-`python scripts/post_merge_cleanup.py --pr <PR_NUMBER> --execute`
-
-Local execution is limited to the exact merged PR worktree/switch state. It may normally remove an eligible linked topic worktree and safely return a single clean topic checkout to canonical `main`. **v1 never auto-deletes the local topic branch**, regardless of merge style or ancestry. The local topic ref is retained and must remain at the exact PR head if it existed at plan time. v1 also retains remote-tracking refs rather than deleting them from a non-atomic remote-absence observation.
-
-The helper must not use reset, stash, content discard, `git clean`, forced worktree removal, `git branch -D`, raw local-branch `update-ref -d`, normal `git branch -d` for automatic topic retirement, unconditional ref deletion, or broad prune to make cleanup succeed.
-
-Before a worktree-changing cleanup effect, v1 also fails closed on local state that ordinary `git status` can hide or classify as disposable: ignored files/directories, `assume-unchanged` or `skip-worktree` index flags, and submodule gitlinks. Resolve or deliberately preserve those states outside the cleanup helper rather than teaching the helper to guess which local data is expendable.
-
-Remote topic deletion is a stronger optional effect and is off by default. Use `--delete-remote` only when that remote write is explicitly part of the closeout procedure; the tool must re-check the remote ref and use an exact expected-SHA lease.
-
-`--execute` re-reads authority and mutable Git state rather than trusting a prior plan. Worktree-registry authorization and local-ref postconditions must come from successful reads; read failure is never equivalent to an empty registry/ref set. A pre-effect failure is `SAFE CLEANUP: BLOCKED` and performs no cleanup. A failure after an authorized effect has already completed or an effect command has begun is `SAFE CLEANUP: INCOMPLETE`; report the partial/ambiguous state and stop rather than attempting force recovery.
-
-If either verifier or cleanup blocks, preserve intentional local work and report the unresolved state. Canonical branch/worktree and unrelated worktrees/refs are never cleanup targets.
+For native `gh` commands, exit status is authoritative for command success; stderr is diagnostic output only and may contain normal success/progress text.
