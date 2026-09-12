@@ -71,6 +71,7 @@ Post-merge cleanup is intentionally separate from verification. `post_merge_clea
 - `PROJECT_STATUS.md` — concise current state first, detail second.
 - `CHANGELOG.md` — meaningful changes, not a duplicate commit log.
 - `AGENTS.md` — instructions for AI coding agents.
+- `docs/PUBLIC_REPOSITORY_READINESS.md` — fail-closed pre-publication audit and human publication gate for private -> public transitions.
 - `docs/adr/` — durable architecture decisions when warranted.
 - `.github/pull_request_template.md` — review/evidence/comprehension checklist.
 - `.github/workflows/policy-check.yml` — starter structural check; canonical starter regression tests run only in the template repository.
