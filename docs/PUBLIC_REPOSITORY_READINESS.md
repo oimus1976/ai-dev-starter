@@ -40,10 +40,10 @@ Audit an exact GitHub state in a disposable clone rather than relying on whichev
     git -C $auditRepo fetch origin '+refs/pull/*/head:refs/remotes/audit-pr/*'
     if ($LASTEXITCODE -ne 0) { throw 'PR-head ref fetch failed' }
 
-    $head = (git -C $auditRepo rev-parse origin/main).Trim()
     $defaultBranch = (gh repo view $repoSlug --json defaultBranchRef --jq '.defaultBranchRef.name').Trim()
     if ($LASTEXITCODE -ne 0) { throw 'default-branch read failed' }
     $head = (git -C $auditRepo rev-parse "origin/$defaultBranch").Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'default-branch head read failed' }
 
     @(
         "AUDIT_REPOSITORY=$repoSlug"
