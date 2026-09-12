@@ -103,19 +103,33 @@ The 21 no-log runs were individually checked through the workflow-jobs API. Ever
 
 Assessment: B3 is cleared for the currently retained Actions publication surface: all available logs were scanner-clean, the remaining no-log runs never started a step, and no artifact exists.
 
-### Issues / PR discussion evidence — B4 still open
+### Issues / PR discussion evidence — B4 cleared for audited surface
 
-Earlier targeted GitHub search found no Issue/PR hits for obvious GitHub token prefixes (`github_pat_`, `ghp_`), `BEGIN PRIVATE KEY`, or `@gmail.com`. This was only limited screening.
+The GitHub-hosted discussion surface was inventoried without creating a raw combined text archive.
 
-Known environment-specific content already exists in GitHub-hosted discussion:
+Observed:
 
-- Issue #17 records `C:\Users\oimus\...` worktree topology;
-- PR #13 contains a qualification comment naming local clone `C:\Users\oimus\ai-dev-starter`;
-- PR #15 contains a qualification comment naming `C:\Users\oimus\ai-dev-starter-issue14` and command lines using that path.
+- total text items screened: 89;
+- Issue bodies: 18;
+- PR bodies: 16;
+- conversation comments: 47;
+- inline review comments: 0;
+- review bodies: 8;
+- Gitleaks finding sources: 0;
+- attachment sources: 0;
+- attachment URLs detected: 0;
+- tool errors: 0;
+- environment/private-data indicator sources: 7.
 
-These are not credential findings. They require explicit human classification as acceptable public developer-environment metadata, redaction/removal candidate, or blocker.
+The seven indicator sources were manually classified:
 
-B4 remains open until all current Issue/PR bodies, conversation comments, review comments/review bodies, and attachment URLs are inventoried and screened, with any hits manually classified.
+- PR #34 contains the already accepted historical owner email `oimus1976@gmail.com`;
+- Issue #17 and five GitHub-hosted comments contain Windows developer paths under `C:\Users\oimus\...`, including personal OSS repository/worktree names used for exact-head and Windows real-machine qualification evidence;
+- no host name, UNC path, private IP, credential, organization-internal URL, municipal/business-system path, or attachment URL was present in those hits.
+
+Human owner decision: the six Windows developer-path findings are **accepted for public disclosure** for this repository. Their value as reproducible qualification evidence is retained; no redaction/edit is required or authorized on account of those paths.
+
+Assessment: B4 is cleared for the audited GitHub-hosted textual/attachment-reference surface.
 
 ### Repository protection
 
@@ -145,16 +159,9 @@ No license is selected by this audit.
 
 Current inventory: 174 runs, zero artifacts. All 153 available logs passed Gitleaks stdin scanning with zero findings. The remaining 21 runs had no log and were confirmed through API readback to contain zero executed steps. Partial logs, tool errors, and API classification errors were zero.
 
-### B4 — GitHub-hosted discussion/attachments audit incomplete
+### B4 — GitHub-hosted discussion/attachments — CLEARED for audited surface
 
-Required close condition:
-
-- inventory Issue and PR bodies;
-- inventory conversation comments, review comments, and review bodies;
-- identify attachment/user-content URLs;
-- scanner-screen the textual surface without publishing a raw combined archive;
-- manually classify environment/private-data findings;
-- do not assume Git-tree cleanup affects GitHub-hosted discussion content.
+All 89 inventoried textual items passed Gitleaks screening with zero findings. No attachment URLs were detected. The seven environment/private-data indicator sources were manually classified as the already accepted owner email plus six Windows developer-path findings, and the human owner explicitly accepted those paths for public disclosure.
 
 ### B5 — Historical redistribution review — CLEARED for audit scope
 
@@ -165,6 +172,7 @@ Historical object-name screening found 56 unique paths with zero risk-name hits.
 - The repository is already written as a reusable starter rather than a personal-data store.
 - Current workflow permissions and checkout behavior are intentionally narrow.
 - Historical author email `oimus1976@gmail.com` is explicitly accepted by the human owner for public disclosure.
+- Windows developer paths surfaced in Issue/PR discussion are explicitly accepted by the human owner for public disclosure.
 - There are no current GitHub Releases or retained Actions artifacts.
 - Public visibility would remove private-repository GitHub-hosted Actions minute pressure for standard runners; that benefit remains secondary to the publication-safety gate.
 
@@ -176,6 +184,6 @@ For this repository, Issue #33 state is therefore recorded in this audit documen
 
 ## Next evidence step
 
-Complete B4 by inventorying and scanner-screening GitHub-hosted Issue/PR discussion and attachment references, then manually classify only the surfaced hits.
+Resolve B2 with an explicit human license decision. If OSS reuse is intended, add the chosen license through the tracked Issue #33 branch, then refresh the audit against the exact PR head / intended publication SHA before any human Ready or visibility decision.
 
-Until B2 and B4 are closed, terminal state remains `BLOCKED`.
+Until B2 is closed, terminal state remains `BLOCKED`.
