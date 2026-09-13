@@ -33,7 +33,7 @@ function Invoke-VerificationNative {
     )
 
     if ([string]::IsNullOrWhiteSpace($DisplayCommand)) {
-        $DisplayCommand = (($Command,) + $Arguments) -join " "
+        $DisplayCommand = (@($Command) + $Arguments) -join " "
     }
 
     Write-VerificationLog -Context $Context -InputObject ("COMMAND={0}" -f $DisplayCommand)
