@@ -1,0 +1,217 @@
+import os
+import re
+import shutil
+import subprocess
+import tempfile
+import textwrap
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+HELPER = ROOT / "scripts" / "interactive_verification.ps1"
+
+
+def ps_quote(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+@unittest.skipUnless(os.name == "nt", "real PowerShell boundary coverage is Windows-only")
+class InteractivePowerShellVerificationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.shells = []
+        for candidate in ("powershell.exe", "pwsh.exe"):
+            resolved = shutil.which(candidate)
+            if resolved and resolved not in cls.shells:
+                cls.shells.append(resolved)
+        if not cls.shells:
+            raise unittest.SkipTest("no Windows PowerShell or PowerShell executable found")
+
+    def run_driver(self, shell: str, body: str, purpose: str):
+        with tempfile.TemporaryDirectory(prefix="issue29-ps-") as temp_dir:
+            temp_path = Path(temp_dir)
+            sentinel = temp_path / "mutation-sentinel.txt"
+            driver = temp_path / "driver.ps1"
+            env = os.environ.copy()
+            env["TEMP"] = str(temp_path)
+            env["TMP"] = str(temp_path)
+
+            script = textwrap.dedent(
+                f"""
+                $ErrorActionPreference = 'Stop'
+                . {ps_quote(str(HELPER))}
+                $sentinel = {ps_quote(str(sentinel))}
+
+                try {{
+                    Invoke-VerificationAttempt `
+                        -ProjectName 'ai-dev-starter' `
+                        -Purpose {ps_quote(purpose)} `
+                        -Body {{
+                            param($ctx)
+                {textwrap.indent(textwrap.dedent(body).strip(), '            ')}
+                        }}
+                }}
+                catch {{
+                    Write-Host ('CAUGHT=' + $_.Exception.Message)
+                }}
+
+                Write-Host 'PARENT_ALIVE=true'
+                if (Test-Path -LiteralPath $sentinel) {{
+                    Write-Host 'SENTINEL=true'
+                }} else {{
+                    Write-Host 'SENTINEL=false'
+                }}
+                """
+            )
+            driver.write_text(script, encoding="utf-8-sig")
+
+            command = [shell, "-NoProfile"]
+            if Path(shell).name.lower() == "powershell.exe":
+                command.extend(["-ExecutionPolicy", "Bypass"])
+            command.extend(["-File", str(driver)])
+
+            completed = subprocess.run(
+                command,
+                cwd=ROOT,
+                env=env,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                timeout=30,
+                check=False,
+            )
+            combined = completed.stdout + completed.stderr
+            logs = re.findall(r"(?m)^LOG=(.+)$", combined)
+            self.assertEqual(
+                completed.returncode,
+                0,
+                msg=f"shell={shell}\nstdout={completed.stdout}\nstderr={completed.stderr}",
+            )
+            self.assertIn("PARENT_ALIVE=true", combined)
+            self.assertEqual(len(logs), 1, msg=combined)
+
+            log_path = Path(logs[0].strip())
+            self.assertTrue(log_path.is_file(), msg=combined)
+            raw = log_path.read_bytes()
+            log_text = raw.decode("utf-8-sig")
+            return combined, log_text, sentinel.exists(), log_path, temp_path
+
+    def assert_single_terminal(self, log_text: str, expected: str):
+        markers = re.findall(r"(?m)^RESULT=(BLOCKED|FAIL|PASS)$", log_text)
+        self.assertEqual(markers, [expected], msg=log_text)
+
+    def test_success_has_one_pass_and_native_evidence(self):
+        body = r"""
+        $native = Invoke-VerificationNative `
+            -Context $ctx `
+            -Command 'cmd.exe' `
+            -Arguments @('/d', '/c', 'echo native-ok') `
+            -DisplayCommand 'cmd.exe /d /c echo native-ok'
+        if ($native.ExitCode -ne 0) { throw 'unexpected native result' }
+        "done" | Set-Content -LiteralPath $sentinel
+        """
+        for shell in self.shells:
+            with self.subTest(shell=shell):
+                combined, log_text, sentinel, log_path, temp_path = self.run_driver(
+                    shell, body, "success"
+                )
+                self.assertTrue(sentinel)
+                self.assert_single_terminal(log_text, "PASS")
+                self.assertIn("COMMAND=cmd.exe /d /c echo native-ok", log_text)
+                self.assertIn("native-ok", log_text)
+                self.assertIn("EXIT_CODE=0", log_text)
+                expected_root = temp_path / "ai-dev-starter-logs" / "success"
+                self.assertEqual(log_path.parent, expected_root)
+
+    def test_early_exception_stops_later_mutation_and_pass(self):
+        body = r"""
+        throw 'early failure'
+        "mutated" | Set-Content -LiteralPath $sentinel
+        """
+        for shell in self.shells:
+            with self.subTest(shell=shell):
+                combined, log_text, sentinel, _, _ = self.run_driver(shell, body, "early-fail")
+                self.assertFalse(sentinel)
+                self.assertIn("CAUGHT=early failure", combined)
+                self.assert_single_terminal(log_text, "FAIL")
+                self.assertNotIn("RESULT=PASS", log_text)
+
+    def test_native_nonzero_stops_later_mutation_and_records_exit_code(self):
+        body = r"""
+        Invoke-VerificationNative `
+            -Context $ctx `
+            -Command 'cmd.exe' `
+            -Arguments @('/d', '/c', 'exit 7') `
+            -DisplayCommand 'cmd.exe /d /c exit 7' | Out-Null
+        "mutated" | Set-Content -LiteralPath $sentinel
+        """
+        for shell in self.shells:
+            with self.subTest(shell=shell):
+                _, log_text, sentinel, _, _ = self.run_driver(shell, body, "native-fail")
+                self.assertFalse(sentinel)
+                self.assertIn("EXIT_CODE=7", log_text)
+                self.assert_single_terminal(log_text, "FAIL")
+                self.assertNotIn("RESULT=PASS", log_text)
+
+    def test_blocked_is_exclusive_and_stops_mutation(self):
+        body = r"""
+        Stop-VerificationBlocked 'precondition not met'
+        "mutated" | Set-Content -LiteralPath $sentinel
+        """
+        for shell in self.shells:
+            with self.subTest(shell=shell):
+                _, log_text, sentinel, _, _ = self.run_driver(shell, body, "blocked")
+                self.assertFalse(sentinel)
+                self.assertIn("ERROR=precondition not met", log_text)
+                self.assert_single_terminal(log_text, "BLOCKED")
+                self.assertNotIn("RESULT=PASS", log_text)
+                self.assertNotIn("RESULT=FAIL", log_text)
+
+    def test_separate_attempts_get_separate_logs(self):
+        shell = self.shells[0]
+        with tempfile.TemporaryDirectory(prefix="issue29-ps-multi-") as temp_dir:
+            temp_path = Path(temp_dir)
+            driver = temp_path / "driver.ps1"
+            env = os.environ.copy()
+            env["TEMP"] = str(temp_path)
+            env["TMP"] = str(temp_path)
+            script = textwrap.dedent(
+                f"""
+                $ErrorActionPreference = 'Stop'
+                . {ps_quote(str(HELPER))}
+                1..2 | ForEach-Object {{
+                    Invoke-VerificationAttempt -ProjectName 'ai-dev-starter' -Purpose 'multi' -Body {{ param($ctx) }}
+                }}
+                """
+            )
+            driver.write_text(script, encoding="utf-8-sig")
+            command = [shell, "-NoProfile"]
+            if Path(shell).name.lower() == "powershell.exe":
+                command.extend(["-ExecutionPolicy", "Bypass"])
+            command.extend(["-File", str(driver)])
+            completed = subprocess.run(
+                command,
+                cwd=ROOT,
+                env=env,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                timeout=30,
+                check=False,
+            )
+            combined = completed.stdout + completed.stderr
+            self.assertEqual(completed.returncode, 0, msg=combined)
+            logs = [Path(value.strip()) for value in re.findall(r"(?m)^LOG=(.+)$", combined)]
+            self.assertEqual(len(logs), 2, msg=combined)
+            self.assertNotEqual(logs[0], logs[1])
+            for log_path in logs:
+                self.assertTrue(log_path.is_file())
+                log_text = log_path.read_bytes().decode("utf-8-sig")
+                self.assert_single_terminal(log_text, "PASS")
+
+
+if __name__ == "__main__":
+    unittest.main()
