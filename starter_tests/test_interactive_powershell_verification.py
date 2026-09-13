@@ -99,7 +99,7 @@ class InteractivePowerShellVerificationTests(unittest.TestCase):
             return combined, log_text, sentinel.exists(), log_path, temp_path
 
     def assert_single_terminal(self, log_text: str, expected: str):
-        markers = re.findall(r"(?m)^RESULT=(BLOCKED|FAIL|PASS)$", log_text)
+        markers = re.findall(r"(?m)^RESULT=(BLOCKED|FAIL|PASS)\r?$", log_text)
         self.assertEqual(markers, [expected], msg=log_text)
 
     def test_success_has_one_pass_and_native_evidence(self):
