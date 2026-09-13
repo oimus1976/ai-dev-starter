@@ -65,6 +65,24 @@ Before reporting a tracked change as complete, establish the applicable evidence
 
 A successful implementation, test, or review does not by itself authorize or prove a protected effect.
 
+## Interactive PowerShell verification
+
+For state-changing or gate-producing PowerShell procedures intended for interactive copy/paste, use the bounded, logging-by-construction contract in `docs/INTERACTIVE_POWERSHELL_VERIFICATION.md` and the canonical helper `scripts/interactive_verification.ps1`.
+
+Keep all checks, permitted mutations, and success-producing work inside one `Invoke-VerificationAttempt` body. Do not append later mutation or success statements as separate top-level pasted commands after the bounded invocation.
+
+For each initialized attempt:
+
+- create one dedicated log before gate/mutation work begins;
+- record relevant commands, output, native exit codes, repository/branch/HEAD, and pre/post status where applicable;
+- treat `$LASTEXITCODE` as authoritative for native commands;
+- keep BLOCKED / FAIL / PASS mutually exclusive;
+- let the wrapper own the single terminal marker and emit PASS only at successful completion;
+- surface `LOG=<path>` so the evidence is immediately locatable;
+- do not use `exit` merely to stop the interactive procedure.
+
+Do not reconstruct gate evidence later from terminal history when the reusable pattern can record it during execution.
+
 ## Hosted CI quota/unavailability
 
 A red or blocked GitHub Actions run is not automatically a code failure. If evidence shows GitHub-hosted Actions is unavailable because of account minutes/quota, billing restriction, or provider availability:
