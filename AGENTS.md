@@ -65,6 +65,19 @@ Before reporting a tracked change as complete, establish the applicable evidence
 
 A successful implementation, test, or review does not by itself authorize or prove a protected effect.
 
+## Hosted CI quota/unavailability
+
+A red or blocked GitHub Actions run is not automatically a code failure. If evidence shows GitHub-hosted Actions is unavailable because of account minutes/quota, billing restriction, or provider availability:
+
+- classify hosted CI as unavailable/blocked rather than PASS or code FAIL;
+- do not repeatedly rerun the same hosted jobs while the provider/account condition persists;
+- never relabel local verification as `GitHub Actions SUCCESS`;
+- use the exact-head local fallback in `docs/GITHUB_ACTIONS_QUOTA_FALLBACK.md` when continued progress is justified;
+- record repository, branch, full HEAD, commands, native exit status, and log location;
+- keep `HIGH_IMPACT` independent review, required real-boundary smoke, C2, Ready, and merge as separate gates.
+
+If correctness specifically depends on the hosted runner environment, local fallback cannot establish that runner-specific claim.
+
 When remediation changes the relevant revision, reassess which prior evidence was invalidated and rerun the evidence required by `BASELINE.md`.
 
 If the same `MAJOR` safety invariant remains violated after two remediation attempts, stop patching and perform an architecture/scope review before another attempt.
