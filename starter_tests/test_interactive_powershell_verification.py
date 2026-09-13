@@ -169,6 +169,17 @@ class InteractivePowerShellVerificationTests(unittest.TestCase):
                 self.assertNotIn("RESULT=PASS", log_text)
                 self.assertNotIn("RESULT=FAIL", log_text)
 
+    def test_utf8_log_round_trip_preserves_non_ascii_text(self):
+        marker = "ENCODING_PROBE=日本語-✓"
+        body = r"""
+        Write-VerificationLog -Context $ctx -InputObject 'ENCODING_PROBE=日本語-✓'
+        """
+        for shell in self.shells:
+            with self.subTest(shell=shell):
+                _, log_text, _, _, _ = self.run_driver(shell, body, "utf8-round-trip")
+                self.assertIn(marker, log_text)
+                self.assert_single_terminal(log_text, "PASS")
+
     def test_separate_attempts_get_separate_logs(self):
         shell = self.shells[0]
         with tempfile.TemporaryDirectory(prefix="issue29-ps-multi-") as temp_dir:
