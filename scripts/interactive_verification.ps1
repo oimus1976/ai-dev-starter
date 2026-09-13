@@ -127,8 +127,16 @@ function Invoke-VerificationAttempt {
         $outcome = "PASS"
     }
     catch {
-        if ($_.Exception.Data.Contains("VerificationOutcome") -and
-            $_.Exception.Data["VerificationOutcome"] -eq "BLOCKED") {
+        $marker = $null
+        $currentException = $_.Exception
+        while ($null -ne $currentException -and $null -eq $marker) {
+            if ($currentException.Data.Contains("VerificationOutcome")) {
+                $marker = [string]$currentException.Data["VerificationOutcome"]
+            }
+            $currentException = $currentException.InnerException
+        }
+
+        if ($marker -eq "BLOCKED") {
             $outcome = "BLOCKED"
         }
 
