@@ -180,6 +180,164 @@ class InteractivePowerShellVerificationTests(unittest.TestCase):
                 self.assertIn(marker, log_text)
                 self.assert_single_terminal(log_text, "PASS")
 
+    def test_display_command_cannot_spoof_actual_native_evidence(self):
+        body = r"""
+        $native = Invoke-VerificationNative `
+            -Context $ctx `
+            -Command 'cmd.exe' `
+            -Arguments @('/d', '/c', 'echo actual-ok') `
+            -DisplayCommand 'git status'
+        if ($native.ExitCode -ne 0) { throw 'unexpected native result' }
+        """
+        for shell in self.shells:
+            with self.subTest(shell=shell):
+                _, log_text, _, _, _ = self.run_driver(
+                    shell, body, "display-command-evidence"
+                )
+                self.assertIn(
+                    "COMMAND=cmd.exe /d /c echo actual-ok",
+                    log_text,
+                )
+                self.assertIn("COMMAND_EXECUTABLE=cmd.exe", log_text)
+                self.assertIn(
+                    'COMMAND_ARGUMENTS_JSON=["/d","/c","echo actual-ok"]',
+                    log_text,
+                )
+                self.assertIn("DISPLAY_COMMAND=git status", log_text)
+                self.assert_single_terminal(log_text, "PASS")
+
+    def test_stderr_with_zero_exit_remains_successful_native_evidence(self):
+        body = r"""
+        $native = Invoke-VerificationNative `
+            -Context $ctx `
+            -Command 'cmd.exe' `
+            -Arguments @('/d', '/c', 'echo stderr-ok 1>&2 & exit /b 0') `
+            -DisplayCommand 'cmd.exe stderr-zero'
+        if ($native.ExitCode -ne 0) { throw 'unexpected native result' }
+        "done" | Set-Content -LiteralPath $sentinel
+        """
+        for shell in self.shells:
+            with self.subTest(shell=shell):
+                _, log_text, sentinel, _, _ = self.run_driver(
+                    shell, body, "stderr-zero"
+                )
+                self.assertTrue(sentinel)
+                self.assertIn("stderr-ok", log_text)
+                self.assertIn("EXIT_CODE=0", log_text)
+                self.assert_single_terminal(log_text, "PASS")
+
+    def test_missing_executable_cannot_reuse_stale_exit_code_or_pass(self):
+        body = r"""
+        Invoke-VerificationNative `
+            -Context $ctx `
+            -Command 'cmd.exe' `
+            -Arguments @('/d', '/c', 'exit /b 0') | Out-Null
+
+        Invoke-VerificationNative `
+            -Context $ctx `
+            -Command 'issue29-definitely-missing-executable.exe' `
+            -Arguments @() | Out-Null
+
+        "mutated" | Set-Content -LiteralPath $sentinel
+        """
+        for shell in self.shells:
+            with self.subTest(shell=shell):
+                _, log_text, sentinel, _, _ = self.run_driver(
+                    shell, body, "missing-executable"
+                )
+                self.assertFalse(sentinel)
+                self.assertIn(
+                    "COMMAND_EXECUTABLE=issue29-definitely-missing-executable.exe",
+                    log_text,
+                )
+                self.assertIn("EXIT_CODE=UNAVAILABLE", log_text)
+                self.assert_single_terminal(log_text, "FAIL")
+                self.assertNotIn("RESULT=PASS", log_text)
+
+    def test_terminal_log_write_failure_cannot_report_false_pass(self):
+        for shell in self.shells:
+            with self.subTest(shell=shell):
+                with tempfile.TemporaryDirectory(prefix="issue29-log-fail-") as temp_dir:
+                    temp_path = Path(temp_dir)
+                    driver = temp_path / "driver.ps1"
+                    env = os.environ.copy()
+                    env["TEMP"] = str(temp_path)
+                    env["TMP"] = str(temp_path)
+
+                    script = textwrap.dedent(
+                        f"""
+                        $ErrorActionPreference = 'Stop'
+                        . {ps_quote(str(HELPER))}
+
+                        try {{
+                            Invoke-VerificationAttempt `
+                                -ProjectName 'ai-dev-starter' `
+                                -Purpose 'terminal-log-failure' `
+                                -Body {{
+                                    param($ctx)
+
+                                    Write-VerificationLog `
+                                        -Context $ctx `
+                                        -InputObject 'BODY_COMPLETED=true'
+
+                                    $savedLog = $ctx.LogPath + '.before-terminal'
+                                    Move-Item `
+                                        -LiteralPath $ctx.LogPath `
+                                        -Destination $savedLog
+
+                                    New-Item `
+                                        -ItemType Directory `
+                                        -Path $ctx.LogPath | Out-Null
+                                }}
+
+                            Write-Host 'UNEXPECTED_RETURN=true'
+                        }}
+                        catch {{
+                            Write-Host ('CAUGHT=' + $_.Exception.Message)
+                        }}
+
+                        Write-Host 'PARENT_ALIVE=true'
+                        """
+                    )
+                    driver.write_text(script, encoding="utf-8-sig")
+
+                    command = [shell, "-NoProfile"]
+                    if Path(shell).name.lower() == "powershell.exe":
+                        command.extend(["-ExecutionPolicy", "Bypass"])
+                    command.extend(["-File", str(driver)])
+
+                    completed = subprocess.run(
+                        command,
+                        cwd=ROOT,
+                        env=env,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        capture_output=True,
+                        timeout=30,
+                        check=False,
+                    )
+                    combined = completed.stdout + completed.stderr
+
+                    self.assertEqual(completed.returncode, 0, msg=combined)
+                    self.assertIn("PARENT_ALIVE=true", combined)
+                    self.assertIn("LOG_WRITE_ERROR=", combined)
+                    self.assertNotIn("UNEXPECTED_RETURN=true", combined)
+                    self.assertNotIn("RESULT=PASS", combined)
+
+                    saved_logs = list(
+                        (
+                            temp_path
+                            / "ai-dev-starter-logs"
+                            / "terminal-log-failure"
+                        ).glob("*.before-terminal")
+                    )
+                    self.assertEqual(len(saved_logs), 1, msg=combined)
+
+                    preserved = saved_logs[0].read_bytes().decode("utf-8-sig")
+                    self.assertIn("BODY_COMPLETED=true", preserved)
+                    self.assertNotIn("RESULT=PASS", preserved)
+
     def test_separate_attempts_get_separate_logs(self):
         shell = self.shells[0]
         with tempfile.TemporaryDirectory(prefix="issue29-ps-multi-") as temp_dir:

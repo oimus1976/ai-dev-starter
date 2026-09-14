@@ -58,7 +58,7 @@ Invoke-VerificationAttempt `
     }
 ```
 
-The helper creates the log before the guarded body starts. After initialization, it always writes exactly one terminal marker and prints `LOG=<path>`.
+The helper creates the log before the guarded body starts. In the normal evidence path, an initialized attempt persists exactly one terminal marker and prints `LOG=<path>`. If terminal-result persistence itself fails, the helper must not surface a false `RESULT=PASS`; it reports the log-write failure on the console and the attempt does not count as successful evidence.
 
 ## Terminal outcomes
 
@@ -72,11 +72,16 @@ The body must not write its own terminal marker. PASS is owned by the wrapper an
 
 Use `Invoke-VerificationNative` for native commands whose success matters. It logs:
 
-- `COMMAND=...`;
+- `COMMAND=...` as a human-readable rendering of the actual invocation;
+- `COMMAND_EXECUTABLE=...`;
+- `COMMAND_ARGUMENTS_JSON=...` so executable and argument boundaries remain independently inspectable;
+- optional `DISPLAY_COMMAND=...` only as caller-supplied explanatory text when it differs from the actual invocation;
 - merged stdout/stderr;
 - `EXIT_CODE=...`.
 
-The helper checks `$LASTEXITCODE` immediately after the native pipeline. Exit status is authoritative. Stderr content is diagnostic only and does not itself make the command fail.
+`DISPLAY_COMMAND` is never authoritative evidence of what executed.
+
+The helper captures `$LASTEXITCODE` immediately after the native invocation. Exit status is authoritative. Windows PowerShell 5.1 may otherwise surface redirected native stderr as an `ErrorRecord`, so the helper temporarily permits native stderr while the process runs, restores fail-stop PowerShell error behavior before writing buffered evidence, and then decides native success from the captured exit code. Stderr content is diagnostic only and does not itself make the native command fail.
 
 The default accepted native exit code is `0`. If a command intentionally uses another exit code as a non-error state, pass the explicit accepted set and interpret the command result before continuing.
 
@@ -117,6 +122,8 @@ A PASS marker does not elevate the authority of the underlying checks. For examp
 
 The helper deliberately rethrows after recording FAIL or BLOCKED. In an interactive PowerShell session this aborts the current bounded invocation but does not use `exit` and therefore does not intentionally terminate the parent shell.
 
+If an error occurs while recording diagnostic error text, the original verification exception remains authoritative and the helper reports `LOG_WRITE_ERROR=...` on the console. If persistence of the terminal `RESULT=PASS` marker fails, the attempt fails rather than returning a success with incomplete durable evidence.
+
 Do not defeat this property by pasting later mutation or success statements after `Invoke-VerificationAttempt`. If follow-up work is part of the same attempt, it belongs inside the `-Body` block.
 
 ## Adoption and validation
@@ -127,9 +134,12 @@ Changes to this contract require regression evidence for:
 
 - early PowerShell exception fail-stop;
 - native non-zero fail-stop;
+- native stderr with exit code `0` remaining diagnostic rather than becoming a false failure;
+- caller-provided display text being unable to replace actual executable/argument evidence;
 - BLOCKED / FAIL / PASS exclusivity;
 - one log per initialized attempt;
 - `LOG=<path>` surfacing;
 - UTF-8 readability;
+- terminal-log-write failure being unable to surface a false PASS;
 - parent-session survival;
 - Windows PowerShell / PowerShell behavior claimed by the repository.

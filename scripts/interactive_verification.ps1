@@ -11,8 +11,8 @@ function Write-VerificationLog {
 
     process {
         $text = if ($null -eq $InputObject) { "" } else { [string]$InputObject }
-        Write-Host $text
         $text | Out-File -LiteralPath $Context.LogPath -Append -Encoding utf8
+        Write-Host $text
     }
 }
 
@@ -32,24 +32,55 @@ function Invoke-VerificationNative {
         [int[]]$AcceptedExitCodes = @(0)
     )
 
-    if ([string]::IsNullOrWhiteSpace($DisplayCommand)) {
-        $DisplayCommand = (@($Command) + $Arguments) -join " "
+    $actualCommand = (@($Command) + $Arguments) -join " "
+    $argumentsJson = ConvertTo-Json -InputObject @($Arguments) -Compress
+
+    Write-VerificationLog -Context $Context -InputObject ("COMMAND={0}" -f $actualCommand)
+    Write-VerificationLog -Context $Context -InputObject ("COMMAND_EXECUTABLE={0}" -f $Command)
+    Write-VerificationLog -Context $Context -InputObject ("COMMAND_ARGUMENTS_JSON={0}" -f $argumentsJson)
+
+    if (-not [string]::IsNullOrWhiteSpace($DisplayCommand) -and $DisplayCommand -ne $actualCommand) {
+        Write-VerificationLog -Context $Context -InputObject ("DISPLAY_COMMAND={0}" -f $DisplayCommand)
     }
 
-    Write-VerificationLog -Context $Context -InputObject ("COMMAND={0}" -f $DisplayCommand)
+    $resolvedCommand = Get-Command `
+        -Name $Command `
+        -CommandType Application `
+        -ErrorAction SilentlyContinue |
+        Select-Object -First 1
 
-    $output = @(
-        & $Command @Arguments 2>&1 | ForEach-Object {
-            Write-VerificationLog -Context $Context -InputObject $_
-            $_
-        }
-    )
-    $exitCode = $LASTEXITCODE
+    if ($null -eq $resolvedCommand) {
+        Write-VerificationLog -Context $Context -InputObject "EXIT_CODE=UNAVAILABLE"
+        throw ("native executable was not found: {0}" -f $Command)
+    }
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        # Windows PowerShell 5.1 can surface redirected native stderr as
+        # ErrorRecord objects. Native success remains authoritative by exit code.
+        # Buffer native output while Continue is active, then restore fail-stop
+        # behavior before writing the buffered evidence to the log.
+        $ErrorActionPreference = "Continue"
+        $output = & $Command @Arguments 2>&1
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    foreach ($item in $output) {
+        Write-VerificationLog -Context $Context -InputObject $item
+    }
+
+    if ($null -eq $exitCode) {
+        Write-VerificationLog -Context $Context -InputObject "EXIT_CODE=UNAVAILABLE"
+        throw ("native command did not produce an exit code: {0}" -f $actualCommand)
+    }
 
     Write-VerificationLog -Context $Context -InputObject ("EXIT_CODE={0}" -f $exitCode)
 
     if ($AcceptedExitCodes -notcontains $exitCode) {
-        throw ("native command failed with exit code {0}: {1}" -f $exitCode, $DisplayCommand)
+        throw ("native command failed with exit code {0}: {1}" -f $exitCode, $actualCommand)
     }
 
     [pscustomobject]@{
@@ -127,8 +158,9 @@ function Invoke-VerificationAttempt {
         $outcome = "PASS"
     }
     catch {
+        $originalError = $_
         $marker = $null
-        $currentException = $_.Exception
+        $currentException = $originalError.Exception
         while ($null -ne $currentException -and $null -eq $marker) {
             if ($currentException.Data.Contains("VerificationOutcome")) {
                 $marker = [string]$currentException.Data["VerificationOutcome"]
@@ -140,12 +172,32 @@ function Invoke-VerificationAttempt {
             $outcome = "BLOCKED"
         }
 
-        Write-VerificationLog -Context $context -InputObject ("ERROR={0}" -f $_.Exception.Message)
-        throw
+        try {
+            Write-VerificationLog -Context $context -InputObject ("ERROR={0}" -f $originalError.Exception.Message)
+        }
+        catch {
+            Write-Host ("LOG_WRITE_ERROR={0}" -f $_.Exception.Message)
+        }
+
+        throw $originalError
     }
     finally {
         # This is the only terminal-marker write in an initialized attempt.
-        Write-VerificationLog -Context $context -InputObject ("RESULT={0}" -f $outcome)
+        try {
+            Write-VerificationLog -Context $context -InputObject ("RESULT={0}" -f $outcome)
+        }
+        catch {
+            $terminalLogError = $_
+            Write-Host ("LOG_WRITE_ERROR={0}" -f $terminalLogError.Exception.Message)
+            Write-Host ("LOG={0}" -f $logPath)
+
+            # A body that otherwise succeeded must not report success when its
+            # terminal PASS evidence could not be persisted.
+            if ($outcome -eq "PASS") {
+                throw $terminalLogError
+            }
+        }
+
         Write-Host ("LOG={0}" -f $logPath)
     }
 }
