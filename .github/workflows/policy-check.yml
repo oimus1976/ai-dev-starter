@@ -68,3 +68,6 @@ jobs:
         run: python -m unittest discover -s starter_tests -p "test_post_merge_cleanup*.py" -v
       - name: Run authoritative branch cleanup regressions
         run: python -m unittest discover -s starter_tests -p "test_branch_cleanup*.py" -v
+      - name: Run interactive PowerShell verification regressions
+        if: runner.os == 'Windows'
+        run: python -m unittest discover -s starter_tests -p "test_interactive_powershell*.py" -v
