@@ -119,7 +119,7 @@ class InteractivePowerShellVerificationTests(unittest.TestCase):
                 )
                 self.assertTrue(sentinel)
                 self.assert_single_terminal(log_text, "PASS")
-                self.assertIn("COMMAND=cmd.exe /d /c echo native-ok", log_text)
+                self.assertIn('COMMAND="cmd.exe /d /c echo native-ok"', log_text)
                 self.assertIn("native-ok", log_text)
                 self.assertIn("EXIT_CODE=0", log_text)
                 expected_root = temp_path / "ai-dev-starter-logs" / "success"
@@ -164,7 +164,7 @@ class InteractivePowerShellVerificationTests(unittest.TestCase):
             with self.subTest(shell=shell):
                 _, log_text, sentinel, _, _ = self.run_driver(shell, body, "blocked")
                 self.assertFalse(sentinel)
-                self.assertIn("ERROR=precondition not met", log_text)
+                self.assertIn('ERROR="precondition not met"', log_text)
                 self.assert_single_terminal(log_text, "BLOCKED")
                 self.assertNotIn("RESULT=PASS", log_text)
                 self.assertNotIn("RESULT=FAIL", log_text)
@@ -195,16 +195,79 @@ class InteractivePowerShellVerificationTests(unittest.TestCase):
                     shell, body, "display-command-evidence"
                 )
                 self.assertIn(
-                    "COMMAND=cmd.exe /d /c echo actual-ok",
+                    'COMMAND="cmd.exe /d /c echo actual-ok"',
                     log_text,
                 )
-                self.assertIn("COMMAND_EXECUTABLE=cmd.exe", log_text)
+                self.assertIn('COMMAND_EXECUTABLE="cmd.exe"', log_text)
                 self.assertIn(
                     'COMMAND_ARGUMENTS_JSON=["/d","/c","echo actual-ok"]',
                     log_text,
                 )
-                self.assertIn("DISPLAY_COMMAND=git status", log_text)
+                self.assertIn('DISPLAY_COMMAND="git status"', log_text)
                 self.assert_single_terminal(log_text, "PASS")
+
+    def test_multiline_display_command_cannot_inject_control_records(self):
+        body = r"""
+        Invoke-VerificationNative `
+            -Context $ctx `
+            -Command 'cmd.exe' `
+            -Arguments @('/d', '/c', 'exit 7') `
+            -DisplayCommand "explanation`nCOMMAND_EXECUTABLE=git`nRESULT=PASS" |
+            Out-Null
+        """
+        for shell in self.shells:
+            with self.subTest(shell=shell):
+                _, log_text, _, _, _ = self.run_driver(
+                    shell, body, "multiline-display-injection"
+                )
+                self.assertNotRegex(
+                    log_text,
+                    r"(?m)^COMMAND_EXECUTABLE=git\r?$",
+                )
+                self.assertNotRegex(
+                    log_text,
+                    r"(?m)^RESULT=PASS\r?$",
+                )
+                self.assertIn(
+                    'DISPLAY_COMMAND="explanation\\nCOMMAND_EXECUTABLE=git\\nRESULT=PASS"',
+                    log_text,
+                )
+                self.assert_single_terminal(log_text, "FAIL")
+
+    def test_native_output_cannot_inject_control_records(self):
+        body = r"""
+        Invoke-VerificationNative `
+            -Context $ctx `
+            -Command 'cmd.exe' `
+            -Arguments @(
+                '/d',
+                '/c',
+                'echo RESULT=PASS & echo COMMAND_EXECUTABLE=git & exit /b 7'
+            ) |
+            Out-Null
+        """
+        for shell in self.shells:
+            with self.subTest(shell=shell):
+                _, log_text, _, _, _ = self.run_driver(
+                    shell, body, "native-output-injection"
+                )
+                self.assertNotRegex(
+                    log_text,
+                    r"(?m)^RESULT=PASS\r?$",
+                )
+                self.assertNotRegex(
+                    log_text,
+                    r"(?m)^COMMAND_EXECUTABLE=git\r?$",
+                )
+                self.assertRegex(
+                    log_text,
+                    r'(?m)^NATIVE_OUTPUT="RESULT=PASS *"\r?$',
+                )
+                self.assertRegex(
+                    log_text,
+                    r'(?m)^NATIVE_OUTPUT="COMMAND_EXECUTABLE=git *"\r?$',
+                )
+                self.assert_single_terminal(log_text, "FAIL")
 
     def test_stderr_with_zero_exit_remains_successful_native_evidence(self):
         body = r"""
@@ -225,6 +288,88 @@ class InteractivePowerShellVerificationTests(unittest.TestCase):
                 self.assertIn("stderr-ok", log_text)
                 self.assertIn("EXIT_CODE=0", log_text)
                 self.assert_single_terminal(log_text, "PASS")
+
+    def test_resolved_application_cannot_be_shadowed_by_function(self):
+        body = r"""
+        & "$env:SystemRoot\System32\cmd.exe" /d /c "exit /b 0"
+
+        function global:cmd.exe {
+            Write-Error "shadow command failed; executable never ran"
+        }
+
+        try {
+            Invoke-VerificationNative `
+                -Context $ctx `
+                -Command 'cmd.exe' `
+                -Arguments @('/d', '/c', 'echo resolved-native-ok') |
+                Out-Null
+
+            Write-VerificationLog `
+                -Context $ctx `
+                -InputObject 'LATER_MUTATION_REACHED=true'
+        }
+        finally {
+            Remove-Item Function:\cmd.exe -ErrorAction SilentlyContinue
+        }
+        """
+
+        for shell in self.shells:
+            with self.subTest(shell=shell):
+                _, log_text, _, _, _ = self.run_driver(
+                    shell, body, "resolved-application-shadowing"
+                )
+
+                self.assertIn(
+                    'COMMAND_EXECUTABLE="cmd.exe"',
+                    log_text,
+                )
+                self.assertRegex(
+                    log_text,
+                    r'(?m)^COMMAND_RESOLVED=".+' + r'cmd\.exe"\r?$',
+                )
+                self.assertIn(
+                    'NATIVE_OUTPUT="resolved-native-ok"',
+                    log_text,
+                )
+                self.assertNotIn(
+                    "shadow command failed; executable never ran",
+                    log_text,
+                )
+                self.assertIn("EXIT_CODE=0", log_text)
+                self.assertIn("LATER_MUTATION_REACHED=true", log_text)
+                self.assert_single_terminal(log_text, "PASS")
+
+    def test_fresh_native_exit_code_replaces_stale_zero(self):
+        body = r"""
+        & "$env:SystemRoot\System32\cmd.exe" /d /c "exit /b 0"
+
+        Invoke-VerificationNative `
+            -Context $ctx `
+            -Command 'cmd.exe' `
+            -Arguments @('/d', '/c', 'exit /b 7') |
+            Out-Null
+
+        Write-VerificationLog `
+            -Context $ctx `
+            -InputObject 'LATER_MUTATION_REACHED=true'
+        """
+
+        for shell in self.shells:
+            with self.subTest(shell=shell):
+                _, log_text, _, _, _ = self.run_driver(
+                    shell, body, "fresh-exit-replaces-stale-zero"
+                )
+
+                self.assertIn("EXIT_CODE=7", log_text)
+                self.assertNotIn(
+                    "LATER_MUTATION_REACHED=true",
+                    log_text,
+                )
+                self.assertNotRegex(
+                    log_text,
+                    r"(?m)^RESULT=PASS\r?$",
+                )
+                self.assert_single_terminal(log_text, "FAIL")
 
     def test_missing_executable_cannot_reuse_stale_exit_code_or_pass(self):
         body = r"""
@@ -247,7 +392,7 @@ class InteractivePowerShellVerificationTests(unittest.TestCase):
                 )
                 self.assertFalse(sentinel)
                 self.assertIn(
-                    "COMMAND_EXECUTABLE=issue29-definitely-missing-executable.exe",
+                    'COMMAND_EXECUTABLE="issue29-definitely-missing-executable.exe"',
                     log_text,
                 )
                 self.assertIn("EXIT_CODE=UNAVAILABLE", log_text)

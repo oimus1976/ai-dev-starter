@@ -72,16 +72,19 @@ The body must not write its own terminal marker. PASS is owned by the wrapper an
 
 Use `Invoke-VerificationNative` for native commands whose success matters. It logs:
 
-- `COMMAND=...` as a human-readable rendering of the actual invocation;
-- `COMMAND_EXECUTABLE=...`;
-- `COMMAND_ARGUMENTS_JSON=...` so executable and argument boundaries remain independently inspectable;
-- optional `DISPLAY_COMMAND=...` only as caller-supplied explanatory text when it differs from the actual invocation;
-- merged stdout/stderr;
+- `COMMAND=...` as a JSON-framed human-readable rendering of the requested invocation;
+- `COMMAND_EXECUTABLE=...` as a JSON-framed requested executable name;
+- `COMMAND_ARGUMENTS_JSON=...` so argument boundaries remain independently inspectable;
+- `COMMAND_RESOLVED=...` as the JSON-framed resolved application path that is actually invoked;
+- optional `DISPLAY_COMMAND=...` as JSON-framed caller-supplied explanatory text when it differs from the requested invocation;
+- each stdout/stderr item as a JSON-framed `NATIVE_OUTPUT=...` record;
 - `EXIT_CODE=...`.
 
-`DISPLAY_COMMAND` is never authoritative evidence of what executed.
+Caller-controlled text and native output are encoded so embedded newlines or text such as `RESULT=PASS` cannot become standalone control records. `DISPLAY_COMMAND` is never authoritative evidence of what executed. `COMMAND_RESOLVED` records the application path actually invoked.
 
-The helper captures `$LASTEXITCODE` immediately after the native invocation. Exit status is authoritative. Windows PowerShell 5.1 may otherwise surface redirected native stderr as an `ErrorRecord`, so the helper temporarily permits native stderr while the process runs, restores fail-stop PowerShell error behavior before writing buffered evidence, and then decides native success from the captured exit code. Stderr content is diagnostic only and does not itself make the native command fail.
+The helper resolves native commands as applications first and invokes that resolved path directly so a PowerShell function or alias with the same name cannot shadow the executable between resolution and launch. Immediately before launch it clears the global `$LASTEXITCODE`; immediately after launch it captures the fresh value. If no fresh native exit status is produced, the attempt fails with `EXIT_CODE=UNAVAILABLE` rather than reusing a stale value.
+
+Exit status is authoritative. Windows PowerShell 5.1 may otherwise surface redirected native stderr as an `ErrorRecord`, so the helper temporarily permits native stderr while the process runs, restores fail-stop PowerShell error behavior before writing buffered evidence, and then decides native success from the captured exit code. Stderr content is diagnostic only and does not itself make the native command fail.
 
 The default accepted native exit code is `0`. If a command intentionally uses another exit code as a non-error state, pass the explicit accepted set and interpret the command result before continuing.
 
@@ -135,7 +138,10 @@ Changes to this contract require regression evidence for:
 - early PowerShell exception fail-stop;
 - native non-zero fail-stop;
 - native stderr with exit code `0` remaining diagnostic rather than becoming a false failure;
-- caller-provided display text being unable to replace actual executable/argument evidence;
+- caller-provided display text and native output being unable to inject standalone control records;
+- caller-provided display text being unable to replace executable/argument evidence;
+- resolved application execution being immune to PowerShell function/alias shadowing;
+- stale native exit status being unable to authorize later success;
 - BLOCKED / FAIL / PASS exclusivity;
 - one log per initialized attempt;
 - `LOG=<path>` surfacing;

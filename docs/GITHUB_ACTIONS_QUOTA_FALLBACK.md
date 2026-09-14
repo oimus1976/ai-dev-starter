@@ -65,8 +65,9 @@ For every initialized attempt the helper provides:
 
 - a dedicated log under `%TEMP%\<project>-logs\actions-quota-fallback\...` by default;
 - explicit UTF-8 log writing;
-- actual native-command evidence including `COMMAND=...`, `COMMAND_EXECUTABLE=...`, `COMMAND_ARGUMENTS_JSON=...`, merged stdout/stderr, and `EXIT_CODE=...`; caller-provided `DISPLAY_COMMAND=...` is explanatory only;
-- immediate `$LASTEXITCODE` capture for native commands, with native stderr treated as diagnostic when the exit code is accepted;
+- framed native-command evidence including JSON-framed `COMMAND=...`, `COMMAND_EXECUTABLE=...`, resolved application path `COMMAND_RESOLVED=...`, structured `COMMAND_ARGUMENTS_JSON=...`, JSON-framed `NATIVE_OUTPUT=...`, and `EXIT_CODE=...`; caller-provided `DISPLAY_COMMAND=...` is explanatory only and payload text cannot create standalone control records;
+- application-only resolution followed by direct invocation of the resolved executable path, preventing PowerShell function/alias shadowing;
+- fresh native-exit capture: the global `$LASTEXITCODE` is cleared before launch and a missing fresh status fails closed instead of reusing stale success; native stderr remains diagnostic when the exit code is accepted;
 - exactly one persisted terminal result in the normal evidence path: `RESULT=PASS`, `RESULT=BLOCKED`, or `RESULT=FAIL`; failure to persist terminal PASS evidence is itself a failed attempt, not PASS;
 - `LOG=<path>` on the console when the helper reaches its terminal reporting path, plus `LOG_WRITE_ERROR=...` if evidence writing fails;
 - no routine use of `exit`, so a failed bounded attempt does not intentionally terminate the interactive shell.

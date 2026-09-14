@@ -16,6 +16,35 @@ function Write-VerificationLog {
     }
 }
 
+function ConvertTo-VerificationJsonString {
+    [CmdletBinding()]
+    param(
+        [AllowNull()]
+        [object]$Value
+    )
+
+    $text = if ($null -eq $Value) { "" } else { [string]$Value }
+    return (ConvertTo-Json -InputObject $text -Compress)
+}
+
+function Write-VerificationField {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$Context,
+
+        [Parameter(Mandatory = $true)]
+        [ValidatePattern('^[A-Z0-9_]+$')]
+        [string]$Name,
+
+        [AllowNull()]
+        [object]$Value
+    )
+
+    $encoded = ConvertTo-VerificationJsonString -Value $Value
+    Write-VerificationLog -Context $Context -InputObject ("{0}={1}" -f $Name, $encoded)
+}
+
 function Invoke-VerificationNative {
     [CmdletBinding()]
     param(
@@ -35,12 +64,12 @@ function Invoke-VerificationNative {
     $actualCommand = (@($Command) + $Arguments) -join " "
     $argumentsJson = ConvertTo-Json -InputObject @($Arguments) -Compress
 
-    Write-VerificationLog -Context $Context -InputObject ("COMMAND={0}" -f $actualCommand)
-    Write-VerificationLog -Context $Context -InputObject ("COMMAND_EXECUTABLE={0}" -f $Command)
+    Write-VerificationField -Context $Context -Name "COMMAND" -Value $actualCommand
+    Write-VerificationField -Context $Context -Name "COMMAND_EXECUTABLE" -Value $Command
     Write-VerificationLog -Context $Context -InputObject ("COMMAND_ARGUMENTS_JSON={0}" -f $argumentsJson)
 
     if (-not [string]::IsNullOrWhiteSpace($DisplayCommand) -and $DisplayCommand -ne $actualCommand) {
-        Write-VerificationLog -Context $Context -InputObject ("DISPLAY_COMMAND={0}" -f $DisplayCommand)
+        Write-VerificationField -Context $Context -Name "DISPLAY_COMMAND" -Value $DisplayCommand
     }
 
     $resolvedCommand = Get-Command `
@@ -54,22 +83,35 @@ function Invoke-VerificationNative {
         throw ("native executable was not found: {0}" -f $Command)
     }
 
+    $resolvedPath = $resolvedCommand.Source
+    if ([string]::IsNullOrWhiteSpace($resolvedPath)) {
+        Write-VerificationLog -Context $Context -InputObject "EXIT_CODE=UNAVAILABLE"
+        throw ("native executable resolved without a usable path: {0}" -f $Command)
+    }
+
+    Write-VerificationField -Context $Context -Name "COMMAND_RESOLVED" -Value $resolvedPath
+
     $previousErrorActionPreference = $ErrorActionPreference
     try {
+        # Clear the global automatic variable rather than creating a local
+        # shadow. A successfully launched native application must establish
+        # a fresh exit status for this invocation.
+        $global:LASTEXITCODE = $null
+
         # Windows PowerShell 5.1 can surface redirected native stderr as
         # ErrorRecord objects. Native success remains authoritative by exit code.
-        # Buffer native output while Continue is active, then restore fail-stop
-        # behavior before writing the buffered evidence to the log.
+        # Invoke the already-resolved application path so functions/aliases
+        # cannot shadow the executable between resolution and launch.
         $ErrorActionPreference = "Continue"
-        $output = & $Command @Arguments 2>&1
-        $exitCode = $LASTEXITCODE
+        $output = & $resolvedPath @Arguments 2>&1
+        $exitCode = $global:LASTEXITCODE
     }
     finally {
         $ErrorActionPreference = $previousErrorActionPreference
     }
 
     foreach ($item in $output) {
-        Write-VerificationLog -Context $Context -InputObject $item
+        Write-VerificationField -Context $Context -Name "NATIVE_OUTPUT" -Value $item
     }
 
     if ($null -eq $exitCode) {
@@ -173,7 +215,7 @@ function Invoke-VerificationAttempt {
         }
 
         try {
-            Write-VerificationLog -Context $context -InputObject ("ERROR={0}" -f $originalError.Exception.Message)
+            Write-VerificationField -Context $context -Name "ERROR" -Value $originalError.Exception.Message
         }
         catch {
             Write-Host ("LOG_WRITE_ERROR={0}" -f $_.Exception.Message)
