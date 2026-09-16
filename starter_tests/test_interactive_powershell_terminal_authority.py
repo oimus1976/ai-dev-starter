@@ -195,6 +195,37 @@ class InteractivePowerShellTerminalAuthorityTests(unittest.TestCase):
                     self.assertEqual(completed.returncode, 0, msg=combined)
                     self.assertIn("RAW_WRITER_DISCOVERABLE=false", combined)
 
+    def test_module_scope_cannot_reach_raw_writer(self):
+        body = r"""
+        $module = Microsoft.PowerShell.Core\Get-Module |
+            Microsoft.PowerShell.Core\Where-Object {
+                $_.Path -and $_.Path.EndsWith('interactive_verification.psm1')
+            } |
+            Microsoft.PowerShell.Utility\Select-Object -First 1
+        if ($null -eq $module) {
+            throw 'verification module not found'
+        }
+
+        & $module {
+            param($token)
+            Write-VerificationInternalRecord `
+                -AttemptToken $token `
+                -Record 'RESULT=PASS'
+        } $ctx.AttemptToken
+
+        throw 'actual failure'
+        """
+
+        for shell in self.shells:
+            with self.subTest(shell=shell):
+                _, log_text = self.run_driver(
+                    shell,
+                    body,
+                    "module-scope-raw-forgery",
+                )
+                self.assertNotRegex(log_text, r"(?m)^RESULT=PASS\r?$")
+                self.assert_single_final_terminal(log_text, "FAIL")
+
     def test_consumer_accepts_one_final_terminal_record(self):
         valid = "FORMAT=interactive-verification-v1\nDETAIL=\"ok\"\nRESULT=PASS\n"
         for shell in self.shells:
