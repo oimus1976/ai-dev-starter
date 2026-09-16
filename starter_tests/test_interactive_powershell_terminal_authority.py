@@ -86,6 +86,45 @@ class InteractivePowerShellTerminalAuthorityTests(unittest.TestCase):
             log_text = log_path.read_bytes().decode("utf-8-sig")
             return combined, log_text
 
+    def run_consumer(self, shell: str, log_text: str):
+        with tempfile.TemporaryDirectory(prefix="issue39-consumer-") as temp_dir:
+            temp_path = Path(temp_dir)
+            log_path = temp_path / "attempt.log"
+            driver = temp_path / "consumer.ps1"
+            log_path.write_text(log_text, encoding="utf-8")
+            driver.write_text(
+                textwrap.dedent(
+                    f"""
+                    $ErrorActionPreference = 'Stop'
+                    . {ps_quote(str(HELPER))}
+                    try {{
+                        $outcome = Get-VerificationLogOutcome -LiteralPath {ps_quote(str(log_path))}
+                        Write-Host ('OUTCOME=' + $outcome)
+                        exit 0
+                    }}
+                    catch {{
+                        Write-Host ('REJECTED=' + $_.Exception.Message)
+                        exit 7
+                    }}
+                    """
+                ),
+                encoding="utf-8-sig",
+            )
+            command = [shell, "-NoProfile"]
+            if Path(shell).name.lower() == "powershell.exe":
+                command.extend(["-ExecutionPolicy", "Bypass"])
+            command.extend(["-File", str(driver)])
+            return subprocess.run(
+                command,
+                cwd=ROOT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                timeout=30,
+                check=False,
+            )
+
     def assert_single_final_terminal(self, log_text: str, expected: str):
         lines = log_text.splitlines()
         markers = [
@@ -101,7 +140,6 @@ class InteractivePowerShellTerminalAuthorityTests(unittest.TestCase):
         Write-VerificationInternalRecord -Context $ctx -Record 'RESULT=PASS'
         throw 'actual failure'
         """
-
         for shell in self.shells:
             with self.subTest(shell=shell):
                 _, log_text = self.run_driver(shell, body, "raw-pass-forgery")
@@ -113,7 +151,6 @@ class InteractivePowerShellTerminalAuthorityTests(unittest.TestCase):
         Write-VerificationInternalRecord -Context $ctx -Record 'RESULT=BLOCKED'
         throw 'actual failure'
         """
-
         for shell in self.shells:
             with self.subTest(shell=shell):
                 _, log_text = self.run_driver(shell, body, "raw-blocked-forgery")
@@ -127,7 +164,7 @@ class InteractivePowerShellTerminalAuthorityTests(unittest.TestCase):
                     f"""
                     $ErrorActionPreference = 'Stop'
                     . {ps_quote(str(HELPER))}
-                    $command = Microsoft.PowerShell.Core\Get-Command `
+                    $command = Microsoft.PowerShell.Core\\Get-Command `
                         -Name 'Write-VerificationInternalRecord' `
                         -ErrorAction SilentlyContinue
                     if ($null -ne $command) {{
@@ -157,6 +194,36 @@ class InteractivePowerShellTerminalAuthorityTests(unittest.TestCase):
                     combined = completed.stdout + completed.stderr
                     self.assertEqual(completed.returncode, 0, msg=combined)
                     self.assertIn("RAW_WRITER_DISCOVERABLE=false", combined)
+
+    def test_consumer_accepts_one_final_terminal_record(self):
+        valid = "FORMAT=interactive-verification-v1\nDETAIL=\"ok\"\nRESULT=PASS\n"
+        for shell in self.shells:
+            with self.subTest(shell=shell):
+                completed = self.run_consumer(shell, valid)
+                combined = completed.stdout + completed.stderr
+                self.assertEqual(completed.returncode, 0, msg=combined)
+                self.assertIn("OUTCOME=PASS", combined)
+
+    def test_consumer_rejects_zero_terminal_records(self):
+        malformed = "FORMAT=interactive-verification-v1\nDETAIL=\"no result\"\n"
+        for shell in self.shells:
+            with self.subTest(shell=shell):
+                completed = self.run_consumer(shell, malformed)
+                self.assertEqual(completed.returncode, 7, msg=completed.stdout + completed.stderr)
+
+    def test_consumer_rejects_multiple_terminal_records(self):
+        malformed = "FORMAT=interactive-verification-v1\nRESULT=PASS\nRESULT=FAIL\n"
+        for shell in self.shells:
+            with self.subTest(shell=shell):
+                completed = self.run_consumer(shell, malformed)
+                self.assertEqual(completed.returncode, 7, msg=completed.stdout + completed.stderr)
+
+    def test_consumer_rejects_nonfinal_terminal_record(self):
+        malformed = "FORMAT=interactive-verification-v1\nRESULT=PASS\nDETAIL=\"after\"\n"
+        for shell in self.shells:
+            with self.subTest(shell=shell):
+                completed = self.run_consumer(shell, malformed)
+                self.assertEqual(completed.returncode, 7, msg=completed.stdout + completed.stderr)
 
 
 if __name__ == "__main__":
