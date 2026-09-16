@@ -37,7 +37,8 @@ function Write-VerificationInternalRecord {
     }
 
     $state = $script:AttemptStates[$AttemptToken]
-    $Record | Microsoft.PowerShell.Utility\Out-File -LiteralPath $state.LogPath -Append -Encoding utf8
+    $state.Writer.WriteLine($Record)
+    $state.Writer.Flush()
     Microsoft.PowerShell.Utility\Write-Host $Record
 }
 
@@ -244,16 +245,25 @@ function Invoke-VerificationAttempt {
     $attemptToken = [Guid]::NewGuid().ToString('N')
     $logPath = Microsoft.PowerShell.Management\Join-Path $LogRoot ("attempt-{0}.log" -f $attemptId)
 
-    'FORMAT=interactive-verification-v1' | Microsoft.PowerShell.Utility\Out-File -LiteralPath $logPath -Encoding utf8
+    $stream = [System.IO.FileStream]::new(
+        $logPath,
+        [System.IO.FileMode]::CreateNew,
+        [System.IO.FileAccess]::Write,
+        [System.IO.FileShare]::Read
+    )
+    $encoding = [System.Text.UTF8Encoding]::new($true)
+    $writer = [System.IO.StreamWriter]::new($stream, $encoding)
+    $writer.AutoFlush = $true
 
     $script:AttemptStates[$attemptToken] = [pscustomobject]@{
         AttemptToken = $attemptToken
         LogPath = $logPath
+        Stream = $stream
+        Writer = $writer
     }
 
     $context = [pscustomobject]@{
         AttemptToken = $attemptToken
-        AttemptId = $attemptId
         ProjectName = $ProjectName
         Purpose = $Purpose
     }
@@ -261,6 +271,7 @@ function Invoke-VerificationAttempt {
     $outcome = 'FAIL'
     $bodyError = $null
     try {
+        Write-VerificationInternalRecord -AttemptToken $attemptToken -Record 'FORMAT=interactive-verification-v1'
         Write-VerificationInternalRecord -AttemptToken $attemptToken -Record ("ATTEMPT_ID={0}" -f $attemptId)
         Write-VerificationInternalRecord -AttemptToken $attemptToken -Record ("PROJECT={0}" -f $ProjectName)
         Write-VerificationInternalRecord -AttemptToken $attemptToken -Record ("PURPOSE={0}" -f $Purpose)
@@ -293,17 +304,28 @@ function Invoke-VerificationAttempt {
         $terminalLogError = $null
         try {
             Write-VerificationInternalRecord -AttemptToken $attemptToken -Record ("RESULT={0}" -f $outcome)
-            $verifiedOutcome = Get-VerificationLogOutcome -LiteralPath $logPath
-            if ($verifiedOutcome -ne $outcome) {
-                throw ("verification terminal outcome mismatch: expected {0}, got {1}" -f $outcome, $verifiedOutcome)
-            }
         }
         catch {
             $terminalLogError = $_
             Microsoft.PowerShell.Utility\Write-Host ("LOG_WRITE_ERROR={0}" -f $terminalLogError.Exception.Message)
         }
         finally {
-            $script:AttemptStates.Remove($attemptToken)
+            try { $writer.Dispose() } catch { }
+            try { $stream.Dispose() } catch { }
+            [void]$script:AttemptStates.Remove($attemptToken)
+        }
+
+        if ($null -eq $terminalLogError) {
+            try {
+                $verifiedOutcome = Get-VerificationLogOutcome -LiteralPath $logPath
+                if ($verifiedOutcome -ne $outcome) {
+                    throw ("verification terminal outcome mismatch: expected {0}, got {1}" -f $outcome, $verifiedOutcome)
+                }
+            }
+            catch {
+                $terminalLogError = $_
+                Microsoft.PowerShell.Utility\Write-Host ("LOG_VERIFY_ERROR={0}" -f $terminalLogError.Exception.Message)
+            }
         }
 
         Microsoft.PowerShell.Utility\Write-Host ("LOG={0}" -f $logPath)
