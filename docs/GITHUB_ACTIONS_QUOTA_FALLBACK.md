@@ -35,7 +35,7 @@ A successful exact-head fallback requires the observed local HEAD to equal the i
 
 ### Interactive PowerShell
 
-Use the canonical contract in `docs/INTERACTIVE_POWERSHELL_VERIFICATION.md` and `scripts/interactive_verification.ps1`.
+Use the canonical contract in `docs/INTERACTIVE_POWERSHELL_VERIFICATION.md` and the paired helper files `scripts/interactive_verification.ps1` + `scripts/interactive_verification.psm1`.
 
 The required shape is:
 
@@ -68,15 +68,21 @@ For every initialized attempt the helper provides:
 - framed native-command evidence including JSON-framed `COMMAND=...`, `COMMAND_EXECUTABLE=...`, resolved application path `COMMAND_RESOLVED=...`, structured `COMMAND_ARGUMENTS_JSON=...`, JSON-framed `NATIVE_OUTPUT=...`, and `EXIT_CODE=...`; caller-provided `DISPLAY_COMMAND=...` is explanatory only and payload text cannot create standalone control records;
 - application-only resolution followed by direct invocation of the resolved executable path, preventing PowerShell function/alias shadowing;
 - fresh native-exit capture: the global `$LASTEXITCODE` is cleared before launch and a missing fresh status fails closed instead of reusing stale success; native stderr remains diagnostic when the exit code is accepted;
-- exactly one persisted terminal result in the normal evidence path: `RESULT=PASS`, `RESULT=BLOCKED`, or `RESULT=FAIL`; failure to persist terminal PASS evidence is itself a failed attempt, not PASS;
-- `LOG=<path>` on the console when the helper reaches its terminal reporting path, plus `LOG_WRITE_ERROR=...` if evidence writing fails;
+- a module-private raw-record writer that is not exported to the guarded caller session;
+- an opaque guarded context that does not expose `LogPath`;
+- an active durable log opened by the module with read-only sharing so guarded body code cannot reopen, replace, or delete the log for writing on the supported Windows boundary;
+- exactly one persisted terminal result in the normal evidence path: `RESULT=PASS`, `RESULT=BLOCKED`, or `RESULT=FAIL`;
+- canonical fail-closed consumption via `Get-VerificationLogOutcome`, which rejects zero, multiple, or non-final terminal records;
+- `LOG=<path>` on the console when the helper reaches its terminal reporting path;
 - no routine use of `exit`, so a failed bounded attempt does not intentionally terminate the interactive shell.
+
+A fallback consumer must never treat the mere presence of `RESULT=PASS` as sufficient. The log is acceptable only when exactly one terminal result exists and it is the final log record.
 
 Before acceptance, the local fallback body for a specific repository must actually record the minimum evidence listed above. The generic helper cannot infer project-specific test commands or acceptance preconditions.
 
 Do not mechanically copy Python commands to a non-Python project. The project-specific CI workflow remains the best reference for which local commands are equivalent.
 
-Repositories created before this helper existed do not inherit it automatically. Adopt the helper/contract explicitly before relying on this exact interactive pattern.
+Repositories created before this helper existed do not inherit it automatically. Adopt the `.ps1` entrypoint and `.psm1` implementation together before relying on this exact interactive pattern.
 
 ## 3. Evidence language
 
@@ -134,7 +140,7 @@ The fallback does not permanently weaken the repository's declared CI authority.
 For each active repository that needs this fallback:
 
 1. add or link this policy in the repository's operating instructions;
-2. adopt the interactive PowerShell helper/contract if interactive gate-producing PowerShell is used;
+2. adopt both interactive PowerShell helper files/contract if interactive gate-producing PowerShell is used;
 3. identify the exact local commands equivalent to project CI;
 4. keep temp/ignored verification logs outside Git unless the repository explicitly requires tracked evidence;
 5. document quota/provider-blocked hosted runs as `UNAVAILABLE`, not PASS or code FAIL;
