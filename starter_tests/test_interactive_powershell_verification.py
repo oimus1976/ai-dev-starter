@@ -206,6 +206,51 @@ class InteractivePowerShellVerificationTests(unittest.TestCase):
                 self.assertIn('DISPLAY_COMMAND="git status"', log_text)
                 self.assert_single_terminal(log_text, "PASS")
 
+    def test_convert_to_json_shadow_cannot_disable_framing(self):
+        body = r"""
+        function global:ConvertTo-Json {
+            param(
+                [Parameter(ValueFromPipeline = $true)]
+                [object]$InputObject,
+                [switch]$Compress
+            )
+            process {
+                [string]$InputObject
+            }
+        }
+
+        try {
+            Invoke-VerificationNative `
+                -Context $ctx `
+                -Command 'cmd.exe' `
+                -Arguments @('/d', '/c', 'exit /b 7') `
+                -DisplayCommand "explanation`nRESULT=PASS`nCOMMAND_RESOLVED=C:\forged.exe" |
+                Out-Null
+        }
+        finally {
+            Remove-Item Function:\ConvertTo-Json -Force -ErrorAction SilentlyContinue
+        }
+        """
+
+        for shell in self.shells:
+            with self.subTest(shell=shell):
+                _, log_text, _, _, _ = self.run_driver(
+                    shell, body, "convert-to-json-shadow"
+                )
+                self.assertNotRegex(
+                    log_text,
+                    r"(?m)^RESULT=PASS\r?$",
+                )
+                self.assertNotRegex(
+                    log_text,
+                    r"(?m)^COMMAND_RESOLVED=C:\\forged\.exe\r?$",
+                )
+                self.assertRegex(
+                    log_text,
+                    r'(?m)^DISPLAY_COMMAND=".*\\nRESULT=PASS\\n.*"\r?$',
+                )
+                self.assert_single_terminal(log_text, "FAIL")
+
     def test_multiline_display_command_cannot_inject_control_records(self):
         body = r"""
         Invoke-VerificationNative `
@@ -288,6 +333,46 @@ class InteractivePowerShellVerificationTests(unittest.TestCase):
                 self.assertIn("stderr-ok", log_text)
                 self.assertIn("EXIT_CODE=0", log_text)
                 self.assert_single_terminal(log_text, "PASS")
+
+    def test_get_command_shadow_cannot_forge_application_resolution(self):
+        body = r"""
+        function global:Get-Command {
+            param(
+                [string]$Name,
+                [object]$CommandType,
+                [object]$ErrorAction
+            )
+            [pscustomobject]@{
+                Source = 'cmd.exe'
+            }
+        }
+
+        function global:cmd.exe {
+            Write-Output 'forged-function-ran'
+            $global:LASTEXITCODE = 0
+        }
+
+        try {
+            Invoke-VerificationNative `
+                -Context $ctx `
+                -Command 'cmd.exe' `
+                -Arguments @('/d', '/c', 'exit /b 7') |
+                Out-Null
+        }
+        finally {
+            Remove-Item Function:\Get-Command -Force -ErrorAction SilentlyContinue
+            Remove-Item Function:\cmd.exe -Force -ErrorAction SilentlyContinue
+        }
+        """
+
+        for shell in self.shells:
+            with self.subTest(shell=shell):
+                _, log_text, _, _, _ = self.run_driver(
+                    shell, body, "get-command-shadow"
+                )
+                self.assertNotIn("forged-function-ran", log_text)
+                self.assertIn("EXIT_CODE=7", log_text)
+                self.assert_single_terminal(log_text, "FAIL")
 
     def test_resolved_application_cannot_be_shadowed_by_function(self):
         body = r"""

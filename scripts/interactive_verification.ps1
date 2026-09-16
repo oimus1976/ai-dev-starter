@@ -1,4 +1,4 @@
-function Write-VerificationLog {
+﻿function Write-VerificationLog {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
@@ -11,8 +11,8 @@ function Write-VerificationLog {
 
     process {
         $text = if ($null -eq $InputObject) { "" } else { [string]$InputObject }
-        $text | Out-File -LiteralPath $Context.LogPath -Append -Encoding utf8
-        Write-Host $text
+        $text | Microsoft.PowerShell.Utility\Out-File -LiteralPath $Context.LogPath -Append -Encoding utf8
+        Microsoft.PowerShell.Utility\Write-Host $text
     }
 }
 
@@ -24,7 +24,7 @@ function ConvertTo-VerificationJsonString {
     )
 
     $text = if ($null -eq $Value) { "" } else { [string]$Value }
-    return (ConvertTo-Json -InputObject $text -Compress)
+    return (Microsoft.PowerShell.Utility\ConvertTo-Json -InputObject $text -Compress)
 }
 
 function Write-VerificationField {
@@ -62,7 +62,7 @@ function Invoke-VerificationNative {
     )
 
     $actualCommand = (@($Command) + $Arguments) -join " "
-    $argumentsJson = ConvertTo-Json -InputObject @($Arguments) -Compress
+    $argumentsJson = Microsoft.PowerShell.Utility\ConvertTo-Json -InputObject @($Arguments) -Compress
 
     Write-VerificationField -Context $Context -Name "COMMAND" -Value $actualCommand
     Write-VerificationField -Context $Context -Name "COMMAND_EXECUTABLE" -Value $Command
@@ -72,19 +72,27 @@ function Invoke-VerificationNative {
         Write-VerificationField -Context $Context -Name "DISPLAY_COMMAND" -Value $DisplayCommand
     }
 
-    $resolvedCommand = Get-Command `
+    $resolvedCommand = Microsoft.PowerShell.Core\Get-Command `
         -Name $Command `
         -CommandType Application `
         -ErrorAction SilentlyContinue |
-        Select-Object -First 1
+        Microsoft.PowerShell.Utility\Select-Object -First 1
 
     if ($null -eq $resolvedCommand) {
         Write-VerificationLog -Context $Context -InputObject "EXIT_CODE=UNAVAILABLE"
         throw ("native executable was not found: {0}" -f $Command)
     }
 
+    if ($resolvedCommand -isnot [System.Management.Automation.ApplicationInfo]) {
+        Write-VerificationLog -Context $Context -InputObject "EXIT_CODE=UNAVAILABLE"
+        throw ("native command did not resolve to an application: {0}" -f $Command)
+    }
+
     $resolvedPath = $resolvedCommand.Source
-    if ([string]::IsNullOrWhiteSpace($resolvedPath)) {
+    if (
+        [string]::IsNullOrWhiteSpace($resolvedPath) -or
+        -not [System.IO.Path]::IsPathRooted($resolvedPath)
+    ) {
         Write-VerificationLog -Context $Context -InputObject "EXIT_CODE=UNAVAILABLE"
         throw ("native executable resolved without a usable path: {0}" -f $Command)
     }
@@ -166,19 +174,19 @@ function Invoke-VerificationAttempt {
         if ([string]::IsNullOrWhiteSpace($env:TEMP)) {
             throw "TEMP is not available and LogRoot was not provided"
         }
-        $LogRoot = Join-Path $env:TEMP ("{0}-logs\{1}" -f $ProjectName, $Purpose)
+        $LogRoot = Microsoft.PowerShell.Management\Join-Path $env:TEMP ("{0}-logs\{1}" -f $ProjectName, $Purpose)
     }
 
-    New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
+    Microsoft.PowerShell.Management\New-Item -ItemType Directory -Force -Path $LogRoot | Microsoft.PowerShell.Core\Out-Null
 
-    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
+    $stamp = Microsoft.PowerShell.Utility\Get-Date -Format 'yyyyMMdd-HHmmss-fff'
     $suffix = [Guid]::NewGuid().ToString('N').Substring(0, 8)
     $attemptId = "{0}-{1}-{2}" -f $stamp, $PID, $suffix
-    $logPath = Join-Path $LogRoot ("attempt-{0}.log" -f $attemptId)
+    $logPath = Microsoft.PowerShell.Management\Join-Path $LogRoot ("attempt-{0}.log" -f $attemptId)
 
     # Explicit UTF-8 creation. Windows PowerShell 5.1 may include a BOM; both
     # Windows PowerShell and PowerShell 7 treat the resulting file as UTF-8.
-    "FORMAT=interactive-verification-v1" | Out-File -LiteralPath $logPath -Encoding utf8
+    "FORMAT=interactive-verification-v1" | Microsoft.PowerShell.Utility\Out-File -LiteralPath $logPath -Encoding utf8
 
     $context = [pscustomobject]@{
         AttemptId = $attemptId
@@ -218,7 +226,7 @@ function Invoke-VerificationAttempt {
             Write-VerificationField -Context $context -Name "ERROR" -Value $originalError.Exception.Message
         }
         catch {
-            Write-Host ("LOG_WRITE_ERROR={0}" -f $_.Exception.Message)
+            Microsoft.PowerShell.Utility\Write-Host ("LOG_WRITE_ERROR={0}" -f $_.Exception.Message)
         }
 
         throw $originalError
@@ -230,8 +238,8 @@ function Invoke-VerificationAttempt {
         }
         catch {
             $terminalLogError = $_
-            Write-Host ("LOG_WRITE_ERROR={0}" -f $terminalLogError.Exception.Message)
-            Write-Host ("LOG={0}" -f $logPath)
+            Microsoft.PowerShell.Utility\Write-Host ("LOG_WRITE_ERROR={0}" -f $terminalLogError.Exception.Message)
+            Microsoft.PowerShell.Utility\Write-Host ("LOG={0}" -f $logPath)
 
             # A body that otherwise succeeded must not report success when its
             # terminal PASS evidence could not be persisted.
@@ -240,6 +248,6 @@ function Invoke-VerificationAttempt {
             }
         }
 
-        Write-Host ("LOG={0}" -f $logPath)
+        Microsoft.PowerShell.Utility\Write-Host ("LOG={0}" -f $logPath)
     }
 }
