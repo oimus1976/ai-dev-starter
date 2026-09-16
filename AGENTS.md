@@ -67,17 +67,20 @@ A successful implementation, test, or review does not by itself authorize or pro
 
 ## Interactive PowerShell verification
 
-For state-changing or gate-producing PowerShell procedures intended for interactive copy/paste, use the bounded, logging-by-construction contract in `docs/INTERACTIVE_POWERSHELL_VERIFICATION.md` and the canonical helper `scripts/interactive_verification.ps1`.
+For state-changing or gate-producing PowerShell procedures intended for interactive copy/paste, use the bounded, logging-by-construction contract in `docs/INTERACTIVE_POWERSHELL_VERIFICATION.md` and the paired canonical helper files `scripts/interactive_verification.ps1` + `scripts/interactive_verification.psm1`.
 
 Keep all checks, permitted mutations, and success-producing work inside one `Invoke-VerificationAttempt` body. Do not append later mutation or success statements as separate top-level pasted commands after the bounded invocation.
 
 For each initialized attempt:
 
-- create one dedicated log before gate/mutation work begins;
+- create one dedicated UTF-8 log before gate/mutation work begins;
 - record relevant commands, output, native exit codes, repository/branch/HEAD, and pre/post status where applicable;
 - treat `$LASTEXITCODE` as authoritative for native commands;
 - keep BLOCKED / FAIL / PASS mutually exclusive;
 - let the wrapper own the single terminal marker and emit PASS only at successful completion;
+- keep the raw record writer module-private and do not expose `LogPath` to guarded body code;
+- keep the active durable log protected from guarded-body write/replace while the attempt is active;
+- when consuming evidence, require exactly one `RESULT=PASS|FAIL|BLOCKED` record and require it to be the final log record; use `Get-VerificationLogOutcome` rather than treating the presence of any PASS line as sufficient;
 - surface `LOG=<path>` so the evidence is immediately locatable;
 - do not use `exit` merely to stop the interactive procedure.
 
