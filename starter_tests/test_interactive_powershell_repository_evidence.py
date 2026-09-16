@@ -91,11 +91,11 @@ class InteractivePowerShellRepositoryEvidenceTests(unittest.TestCase):
                         if ($headText -ne $expectedHead) {{ Stop-VerificationBlocked 'HEAD mismatch' }}
                         if ($preStatus.Output.Count -ne 0) {{ Stop-VerificationBlocked 'pre-status is dirty' }}
 
-                        Write-VerificationLog -Context $ctx -InputObject ('REPOSITORY=' + (($repo.Output | Out-String).Trim()))
-                        Write-VerificationLog -Context $ctx -InputObject ('BRANCH=' + (($branch.Output | Out-String).Trim()))
-                        Write-VerificationLog -Context $ctx -InputObject ('EXPECTED_HEAD=' + $expectedHead)
-                        Write-VerificationLog -Context $ctx -InputObject ('HEAD=' + $headText)
-                        Write-VerificationLog -Context $ctx -InputObject 'PRE_STATUS_CLEAN=true'
+                        Write-VerificationField -Context $ctx -Name 'REPOSITORY' -Value (($repo.Output | Out-String).Trim())
+                        Write-VerificationField -Context $ctx -Name 'BRANCH' -Value (($branch.Output | Out-String).Trim())
+                        Write-VerificationField -Context $ctx -Name 'EXPECTED_HEAD' -Value $expectedHead
+                        Write-VerificationField -Context $ctx -Name 'HEAD' -Value $headText
+                        Write-VerificationField -Context $ctx -Name 'PRE_STATUS_CLEAN' -Value 'true'
 
                         $postHead = Invoke-VerificationNative -Context $ctx -Command 'git' -Arguments @('rev-parse', 'HEAD') -DisplayCommand 'git rev-parse HEAD (post)'
                         $postStatus = Invoke-VerificationNative -Context $ctx -Command 'git' -Arguments @('status', '--porcelain=v1', '--untracked-files=all') -DisplayCommand 'git status --porcelain=v1 --untracked-files=all (post)'
@@ -103,8 +103,8 @@ class InteractivePowerShellRepositoryEvidenceTests(unittest.TestCase):
                         if ($postHeadText -ne $expectedHead) {{ Stop-VerificationBlocked 'post HEAD mismatch' }}
                         if ($postStatus.Output.Count -ne 0) {{ Stop-VerificationBlocked 'post-status is dirty' }}
 
-                        Write-VerificationLog -Context $ctx -InputObject ('POST_HEAD=' + $postHeadText)
-                        Write-VerificationLog -Context $ctx -InputObject 'POST_STATUS_CLEAN=true'
+                        Write-VerificationField -Context $ctx -Name 'POST_HEAD' -Value $postHeadText
+                        Write-VerificationField -Context $ctx -Name 'POST_STATUS_CLEAN' -Value 'true'
                     }}
             }}
             catch {{
@@ -148,13 +148,13 @@ class InteractivePowerShellRepositoryEvidenceTests(unittest.TestCase):
             for shell in self.shells:
                 with self.subTest(shell=shell):
                     log_text = self.run_evidence_attempt(shell, repo, expected_head, temp_path)
-                    self.assertIn(f"REPOSITORY={FIXTURE_REMOTE}", log_text)
-                    self.assertIn(f"BRANCH={FIXTURE_BRANCH}", log_text)
-                    self.assertIn(f"EXPECTED_HEAD={expected_head}", log_text)
-                    self.assertIn(f"HEAD={expected_head}", log_text)
-                    self.assertIn("PRE_STATUS_CLEAN=true", log_text)
-                    self.assertIn(f"POST_HEAD={expected_head}", log_text)
-                    self.assertIn("POST_STATUS_CLEAN=true", log_text)
+                    self.assertIn(f'REPOSITORY="{FIXTURE_REMOTE}"', log_text)
+                    self.assertIn(f'BRANCH="{FIXTURE_BRANCH}"', log_text)
+                    self.assertIn(f'EXPECTED_HEAD="{expected_head}"', log_text)
+                    self.assertIn(f'HEAD="{expected_head}"', log_text)
+                    self.assertIn('PRE_STATUS_CLEAN="true"', log_text)
+                    self.assertIn(f'POST_HEAD="{expected_head}"', log_text)
+                    self.assertIn('POST_STATUS_CLEAN="true"', log_text)
                     self.assertRegex(log_text, r"(?m)^RESULT=PASS\r?$")
                     self.assertNotIn("RESULT=FAIL", log_text)
                     self.assertNotIn("RESULT=BLOCKED", log_text)

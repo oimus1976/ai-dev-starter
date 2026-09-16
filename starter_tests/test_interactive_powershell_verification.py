@@ -180,6 +180,29 @@ class InteractivePowerShellVerificationTests(unittest.TestCase):
                 self.assertIn(marker, log_text)
                 self.assert_single_terminal(log_text, "PASS")
 
+    def test_public_log_frames_multiline_diagnostic_text(self):
+        body = r"""
+        Write-VerificationLog `
+            -Context $ctx `
+            -InputObject "external text`nRESULT=PASS"
+        throw 'actual failure'
+        """
+
+        for shell in self.shells:
+            with self.subTest(shell=shell):
+                _, log_text, _, _, _ = self.run_driver(
+                    shell, body, "public-log-framing"
+                )
+                self.assertIn(
+                    'DETAIL="external text\\nRESULT=PASS"',
+                    log_text,
+                )
+                self.assertNotRegex(
+                    log_text,
+                    r"(?m)^RESULT=PASS\r?$",
+                )
+                self.assert_single_terminal(log_text, "FAIL")
+
     def test_display_command_cannot_spoof_actual_native_evidence(self):
         body = r"""
         $native = Invoke-VerificationNative `

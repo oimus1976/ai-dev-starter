@@ -1,4 +1,22 @@
-﻿function Write-VerificationLog {
+﻿function Write-VerificationInternalRecord {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$Context,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Record
+    )
+
+    if ($Record -match "[`r`n]") {
+        throw "internal verification record must be one physical line"
+    }
+
+    $Record | Microsoft.PowerShell.Utility\Out-File -LiteralPath $Context.LogPath -Append -Encoding utf8
+    Microsoft.PowerShell.Utility\Write-Host $Record
+}
+
+function Write-VerificationLog {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
@@ -10,9 +28,7 @@
     )
 
     process {
-        $text = if ($null -eq $InputObject) { "" } else { [string]$InputObject }
-        $text | Microsoft.PowerShell.Utility\Out-File -LiteralPath $Context.LogPath -Append -Encoding utf8
-        Microsoft.PowerShell.Utility\Write-Host $text
+        Write-VerificationField -Context $Context -Name "DETAIL" -Value $InputObject
     }
 }
 
@@ -42,7 +58,7 @@ function Write-VerificationField {
     )
 
     $encoded = ConvertTo-VerificationJsonString -Value $Value
-    Write-VerificationLog -Context $Context -InputObject ("{0}={1}" -f $Name, $encoded)
+    Write-VerificationInternalRecord -Context $Context -Record ("{0}={1}" -f $Name, $encoded)
 }
 
 function Invoke-VerificationNative {
@@ -66,7 +82,7 @@ function Invoke-VerificationNative {
 
     Write-VerificationField -Context $Context -Name "COMMAND" -Value $actualCommand
     Write-VerificationField -Context $Context -Name "COMMAND_EXECUTABLE" -Value $Command
-    Write-VerificationLog -Context $Context -InputObject ("COMMAND_ARGUMENTS_JSON={0}" -f $argumentsJson)
+    Write-VerificationInternalRecord -Context $Context -Record ("COMMAND_ARGUMENTS_JSON={0}" -f $argumentsJson)
 
     if (-not [string]::IsNullOrWhiteSpace($DisplayCommand) -and $DisplayCommand -ne $actualCommand) {
         Write-VerificationField -Context $Context -Name "DISPLAY_COMMAND" -Value $DisplayCommand
@@ -79,12 +95,12 @@ function Invoke-VerificationNative {
         Microsoft.PowerShell.Utility\Select-Object -First 1
 
     if ($null -eq $resolvedCommand) {
-        Write-VerificationLog -Context $Context -InputObject "EXIT_CODE=UNAVAILABLE"
+        Write-VerificationInternalRecord -Context $Context -Record "EXIT_CODE=UNAVAILABLE"
         throw ("native executable was not found: {0}" -f $Command)
     }
 
     if ($resolvedCommand -isnot [System.Management.Automation.ApplicationInfo]) {
-        Write-VerificationLog -Context $Context -InputObject "EXIT_CODE=UNAVAILABLE"
+        Write-VerificationInternalRecord -Context $Context -Record "EXIT_CODE=UNAVAILABLE"
         throw ("native command did not resolve to an application: {0}" -f $Command)
     }
 
@@ -93,7 +109,7 @@ function Invoke-VerificationNative {
         [string]::IsNullOrWhiteSpace($resolvedPath) -or
         -not [System.IO.Path]::IsPathRooted($resolvedPath)
     ) {
-        Write-VerificationLog -Context $Context -InputObject "EXIT_CODE=UNAVAILABLE"
+        Write-VerificationInternalRecord -Context $Context -Record "EXIT_CODE=UNAVAILABLE"
         throw ("native executable resolved without a usable path: {0}" -f $Command)
     }
 
@@ -123,11 +139,11 @@ function Invoke-VerificationNative {
     }
 
     if ($null -eq $exitCode) {
-        Write-VerificationLog -Context $Context -InputObject "EXIT_CODE=UNAVAILABLE"
+        Write-VerificationInternalRecord -Context $Context -Record "EXIT_CODE=UNAVAILABLE"
         throw ("native command did not produce an exit code: {0}" -f $actualCommand)
     }
 
-    Write-VerificationLog -Context $Context -InputObject ("EXIT_CODE={0}" -f $exitCode)
+    Write-VerificationInternalRecord -Context $Context -Record ("EXIT_CODE={0}" -f $exitCode)
 
     if ($AcceptedExitCodes -notcontains $exitCode) {
         throw ("native command failed with exit code {0}: {1}" -f $exitCode, $actualCommand)
@@ -198,9 +214,9 @@ function Invoke-VerificationAttempt {
     $outcome = "FAIL"
 
     try {
-        Write-VerificationLog -Context $context -InputObject ("ATTEMPT_ID={0}" -f $attemptId)
-        Write-VerificationLog -Context $context -InputObject ("PROJECT={0}" -f $ProjectName)
-        Write-VerificationLog -Context $context -InputObject ("PURPOSE={0}" -f $Purpose)
+        Write-VerificationInternalRecord -Context $context -Record ("ATTEMPT_ID={0}" -f $attemptId)
+        Write-VerificationInternalRecord -Context $context -Record ("PROJECT={0}" -f $ProjectName)
+        Write-VerificationInternalRecord -Context $context -Record ("PURPOSE={0}" -f $Purpose)
 
         & $Body $context
 
@@ -234,7 +250,7 @@ function Invoke-VerificationAttempt {
     finally {
         # This is the only terminal-marker write in an initialized attempt.
         try {
-            Write-VerificationLog -Context $context -InputObject ("RESULT={0}" -f $outcome)
+            Write-VerificationInternalRecord -Context $context -Record ("RESULT={0}" -f $outcome)
         }
         catch {
             $terminalLogError = $_

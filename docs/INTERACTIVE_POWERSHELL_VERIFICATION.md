@@ -49,9 +49,9 @@ Invoke-VerificationAttempt `
             Stop-VerificationBlocked "working tree is not clean"
         }
 
-        Write-VerificationLog -Context $ctx -InputObject ("REPOSITORY={0}" -f (($repo.Output | Out-String).Trim()))
-        Write-VerificationLog -Context $ctx -InputObject ("BRANCH={0}" -f (($branch.Output | Out-String).Trim()))
-        Write-VerificationLog -Context $ctx -InputObject ("HEAD={0}" -f (($head.Output | Out-String).Trim()))
+        Write-VerificationField -Context $ctx -Name "REPOSITORY" -Value (($repo.Output | Out-String).Trim())
+        Write-VerificationField -Context $ctx -Name "BRANCH" -Value (($branch.Output | Out-String).Trim())
+        Write-VerificationField -Context $ctx -Name "HEAD" -Value (($head.Output | Out-String).Trim())
 
         # Put any permitted mutation only after all required gates.
         # Do not emit RESULT=PASS here; the wrapper owns the terminal marker.
@@ -104,6 +104,8 @@ A repository may provide `-LogRoot` only when it has an explicit alternative evi
 
 The helper writes log files with explicit UTF-8 encoding. Windows PowerShell 5.1 may write a UTF-8 BOM while PowerShell 7 commonly does not; the contract is UTF-8 readability, not a specific BOM form.
 
+`Write-VerificationLog` is the caller-facing diagnostic writer and always records payload text as a JSON-framed `DETAIL=...` field. Use `Write-VerificationField` for named caller evidence such as repository, branch, or HEAD values. Raw control records are helper-internal, restricted to one physical line, and must not be written by the guarded body.
+
 Do not write secrets, credentials, private data, or unrelated environment dumps merely to make the log comprehensive.
 
 ## Repository evidence
@@ -138,7 +140,7 @@ Changes to this contract require regression evidence for:
 - early PowerShell exception fail-stop;
 - native non-zero fail-stop;
 - native stderr with exit code `0` remaining diagnostic rather than becoming a false failure;
-- caller-provided display text and native output being unable to inject standalone control records;
+- caller-provided display text, native output, and public diagnostic logging being unable to inject standalone control records;
 - caller-provided display text being unable to replace executable/argument evidence;
 - resolved application execution being immune to PowerShell function/alias shadowing;
 - stale native exit status being unable to authorize later success;
