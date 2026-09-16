@@ -276,7 +276,22 @@ function Invoke-VerificationAttempt {
         Write-VerificationInternalRecord -AttemptToken $attemptToken -Record ("PROJECT={0}" -f $ProjectName)
         Write-VerificationInternalRecord -AttemptToken $attemptToken -Record ("PURPOSE={0}" -f $Purpose)
 
-        & $Body $context
+        $previousLanguageMode = $ExecutionContext.SessionState.LanguageMode
+        $languageModeChanged = $false
+        try {
+            if ($previousLanguageMode -eq [System.Management.Automation.PSLanguageMode]::FullLanguage) {
+                $ExecutionContext.SessionState.LanguageMode = [System.Management.Automation.PSLanguageMode]::ConstrainedLanguage
+                $languageModeChanged = $true
+            }
+
+            & $Body $context
+        }
+        finally {
+            if ($languageModeChanged) {
+                $ExecutionContext.SessionState.LanguageMode = $previousLanguageMode
+            }
+        }
+
         $outcome = 'PASS'
     }
     catch {
