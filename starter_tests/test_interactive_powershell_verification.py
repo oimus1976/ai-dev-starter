@@ -197,10 +197,7 @@ class InteractivePowerShellVerificationTests(unittest.TestCase):
                     'DETAIL="external text\\nRESULT=PASS"',
                     log_text,
                 )
-                self.assertNotRegex(
-                    log_text,
-                    r"(?m)^RESULT=PASS\r?$",
-                )
+                self.assertNotRegex(log_text, r"(?m)^RESULT=PASS\r?$")
                 self.assert_single_terminal(log_text, "FAIL")
 
     def test_display_command_cannot_spoof_actual_native_evidence(self):
@@ -217,10 +214,7 @@ class InteractivePowerShellVerificationTests(unittest.TestCase):
                 _, log_text, _, _, _ = self.run_driver(
                     shell, body, "display-command-evidence"
                 )
-                self.assertIn(
-                    'COMMAND="cmd.exe /d /c echo actual-ok"',
-                    log_text,
-                )
+                self.assertIn('COMMAND="cmd.exe /d /c echo actual-ok"', log_text)
                 self.assertIn('COMMAND_EXECUTABLE="cmd.exe"', log_text)
                 self.assertIn(
                     'COMMAND_ARGUMENTS_JSON=["/d","/c","echo actual-ok"]',
@@ -237,9 +231,7 @@ class InteractivePowerShellVerificationTests(unittest.TestCase):
                 [object]$InputObject,
                 [switch]$Compress
             )
-            process {
-                [string]$InputObject
-            }
+            process { [string]$InputObject }
         }
 
         try {
@@ -260,10 +252,7 @@ class InteractivePowerShellVerificationTests(unittest.TestCase):
                 _, log_text, _, _, _ = self.run_driver(
                     shell, body, "convert-to-json-shadow"
                 )
-                self.assertNotRegex(
-                    log_text,
-                    r"(?m)^RESULT=PASS\r?$",
-                )
+                self.assertNotRegex(log_text, r"(?m)^RESULT=PASS\r?$")
                 self.assertNotRegex(
                     log_text,
                     r"(?m)^COMMAND_RESOLVED=C:\\forged\.exe\r?$",
@@ -292,10 +281,7 @@ class InteractivePowerShellVerificationTests(unittest.TestCase):
                     log_text,
                     r"(?m)^COMMAND_EXECUTABLE=git\r?$",
                 )
-                self.assertNotRegex(
-                    log_text,
-                    r"(?m)^RESULT=PASS\r?$",
-                )
+                self.assertNotRegex(log_text, r"(?m)^RESULT=PASS\r?$")
                 self.assertIn(
                     'DISPLAY_COMMAND="explanation\\nCOMMAND_EXECUTABLE=git\\nRESULT=PASS"',
                     log_text,
@@ -319,10 +305,7 @@ class InteractivePowerShellVerificationTests(unittest.TestCase):
                 _, log_text, _, _, _ = self.run_driver(
                     shell, body, "native-output-injection"
                 )
-                self.assertNotRegex(
-                    log_text,
-                    r"(?m)^RESULT=PASS\r?$",
-                )
+                self.assertNotRegex(log_text, r"(?m)^RESULT=PASS\r?$")
                 self.assertNotRegex(
                     log_text,
                     r"(?m)^COMMAND_EXECUTABLE=git\r?$",
@@ -365,9 +348,7 @@ class InteractivePowerShellVerificationTests(unittest.TestCase):
                 [object]$CommandType,
                 [object]$ErrorAction
             )
-            [pscustomobject]@{
-                Source = 'cmd.exe'
-            }
+            [pscustomobject]@{ Source = 'cmd.exe' }
         }
 
         function global:cmd.exe {
@@ -426,19 +407,12 @@ class InteractivePowerShellVerificationTests(unittest.TestCase):
                 _, log_text, _, _, _ = self.run_driver(
                     shell, body, "resolved-application-shadowing"
                 )
-
-                self.assertIn(
-                    'COMMAND_EXECUTABLE="cmd.exe"',
-                    log_text,
-                )
+                self.assertIn('COMMAND_EXECUTABLE="cmd.exe"', log_text)
                 self.assertRegex(
                     log_text,
                     r'(?m)^COMMAND_RESOLVED=".+' + r'cmd\.exe"\r?$',
                 )
-                self.assertIn(
-                    'NATIVE_OUTPUT="resolved-native-ok"',
-                    log_text,
-                )
+                self.assertIn('NATIVE_OUTPUT="resolved-native-ok"', log_text)
                 self.assertNotIn(
                     "shadow command failed; executable never ran",
                     log_text,
@@ -467,16 +441,9 @@ class InteractivePowerShellVerificationTests(unittest.TestCase):
                 _, log_text, _, _, _ = self.run_driver(
                     shell, body, "fresh-exit-replaces-stale-zero"
                 )
-
                 self.assertIn("EXIT_CODE=7", log_text)
-                self.assertNotIn(
-                    "LATER_MUTATION_REACHED=true",
-                    log_text,
-                )
-                self.assertNotRegex(
-                    log_text,
-                    r"(?m)^RESULT=PASS\r?$",
-                )
+                self.assertNotIn("LATER_MUTATION_REACHED=true", log_text)
+                self.assertNotRegex(log_text, r"(?m)^RESULT=PASS\r?$")
                 self.assert_single_terminal(log_text, "FAIL")
 
     def test_missing_executable_cannot_reuse_stale_exit_code_or_pass(self):
@@ -507,89 +474,50 @@ class InteractivePowerShellVerificationTests(unittest.TestCase):
                 self.assert_single_terminal(log_text, "FAIL")
                 self.assertNotIn("RESULT=PASS", log_text)
 
-    def test_terminal_log_write_failure_cannot_report_false_pass(self):
+    def test_active_log_cannot_be_replaced_by_guarded_body(self):
+        body = r"""
+        Write-VerificationLog `
+            -Context $ctx `
+            -InputObject 'BODY_STARTED=true'
+
+        if ($null -ne $ctx.PSObject.Properties['LogPath']) {
+            throw 'guarded context exposed LogPath'
+        }
+
+        $root = Join-Path $env:TEMP 'ai-dev-starter-logs\active-log-lock'
+        $active = @(Get-ChildItem -LiteralPath $root -Filter 'attempt-*.log')
+        if ($active.Count -ne 1) {
+            throw "expected one active log, found $($active.Count)"
+        }
+
+        $replacementBlocked = $false
+        try {
+            Move-Item `
+                -LiteralPath $active[0].FullName `
+                -Destination ($active[0].FullName + '.moved') `
+                -ErrorAction Stop
+        }
+        catch {
+            $replacementBlocked = $true
+        }
+        if (-not $replacementBlocked) {
+            throw 'active log replacement unexpectedly succeeded'
+        }
+
+        Write-VerificationLog `
+            -Context $ctx `
+            -InputObject 'ACTIVE_LOG_REPLACEMENT_BLOCKED=true'
+        """
+
         for shell in self.shells:
             with self.subTest(shell=shell):
-                with tempfile.TemporaryDirectory(prefix="issue29-log-fail-") as temp_dir:
-                    temp_path = Path(temp_dir)
-                    driver = temp_path / "driver.ps1"
-                    env = os.environ.copy()
-                    env["TEMP"] = str(temp_path)
-                    env["TMP"] = str(temp_path)
-
-                    script = textwrap.dedent(
-                        f"""
-                        $ErrorActionPreference = 'Stop'
-                        . {ps_quote(str(HELPER))}
-
-                        try {{
-                            Invoke-VerificationAttempt `
-                                -ProjectName 'ai-dev-starter' `
-                                -Purpose 'terminal-log-failure' `
-                                -Body {{
-                                    param($ctx)
-
-                                    Write-VerificationLog `
-                                        -Context $ctx `
-                                        -InputObject 'BODY_COMPLETED=true'
-
-                                    $savedLog = $ctx.LogPath + '.before-terminal'
-                                    Move-Item `
-                                        -LiteralPath $ctx.LogPath `
-                                        -Destination $savedLog
-
-                                    New-Item `
-                                        -ItemType Directory `
-                                        -Path $ctx.LogPath | Out-Null
-                                }}
-
-                            Write-Host 'UNEXPECTED_RETURN=true'
-                        }}
-                        catch {{
-                            Write-Host ('CAUGHT=' + $_.Exception.Message)
-                        }}
-
-                        Write-Host 'PARENT_ALIVE=true'
-                        """
-                    )
-                    driver.write_text(script, encoding="utf-8-sig")
-
-                    command = [shell, "-NoProfile"]
-                    if Path(shell).name.lower() == "powershell.exe":
-                        command.extend(["-ExecutionPolicy", "Bypass"])
-                    command.extend(["-File", str(driver)])
-
-                    completed = subprocess.run(
-                        command,
-                        cwd=ROOT,
-                        env=env,
-                        text=True,
-                        encoding="utf-8",
-                        errors="replace",
-                        capture_output=True,
-                        timeout=30,
-                        check=False,
-                    )
-                    combined = completed.stdout + completed.stderr
-
-                    self.assertEqual(completed.returncode, 0, msg=combined)
-                    self.assertIn("PARENT_ALIVE=true", combined)
-                    self.assertIn("LOG_WRITE_ERROR=", combined)
-                    self.assertNotIn("UNEXPECTED_RETURN=true", combined)
-                    self.assertNotIn("RESULT=PASS", combined)
-
-                    saved_logs = list(
-                        (
-                            temp_path
-                            / "ai-dev-starter-logs"
-                            / "terminal-log-failure"
-                        ).glob("*.before-terminal")
-                    )
-                    self.assertEqual(len(saved_logs), 1, msg=combined)
-
-                    preserved = saved_logs[0].read_bytes().decode("utf-8-sig")
-                    self.assertIn("BODY_COMPLETED=true", preserved)
-                    self.assertNotIn("RESULT=PASS", preserved)
+                _, log_text, _, log_path, _ = self.run_driver(
+                    shell, body, "active-log-lock"
+                )
+                self.assertTrue(log_path.is_file())
+                self.assertIn("BODY_STARTED=true", log_text)
+                self.assertIn("ACTIVE_LOG_REPLACEMENT_BLOCKED=true", log_text)
+                self.assert_single_terminal(log_text, "PASS")
 
     def test_separate_attempts_get_separate_logs(self):
         shell = self.shells[0]
