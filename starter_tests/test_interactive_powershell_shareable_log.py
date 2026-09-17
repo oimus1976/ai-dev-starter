@@ -1,54 +1,37 @@
 import os
 import re
-import shutil
 import subprocess
+import sys
 import tempfile
-import textwrap
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-HELPER = ROOT / "scripts" / "shareable_command_log.ps1"
+HELPER = ROOT / "scripts" / "shareable_command_log.py"
 
 
-def ps_quote(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
-
-
-@unittest.skipUnless(os.name == "nt", "real PowerShell boundary coverage is Windows-only")
-class ShareablePowerShellCommandLogTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.shells = []
-        for candidate in ("powershell.exe", "pwsh.exe"):
-            resolved = shutil.which(candidate)
-            if resolved and resolved not in cls.shells:
-                cls.shells.append(resolved)
-        if not cls.shells:
-            raise unittest.SkipTest("no Windows PowerShell or PowerShell executable found")
-
-    def run_driver(self, shell: str, invocation: str):
+class ShareableCommandLogTests(unittest.TestCase):
+    def run_logger(self, name: str, child_code: str):
         with tempfile.TemporaryDirectory(prefix="issue43-shareable-log-") as temp_dir:
             temp_path = Path(temp_dir)
-            driver = temp_path / "driver.ps1"
             env = os.environ.copy()
             env["TEMP"] = str(temp_path)
             env["TMP"] = str(temp_path)
+            env["PYTHONIOENCODING"] = "utf-8"
 
-            script = textwrap.dedent(
-                f"""
-                $ErrorActionPreference = 'Stop'
-                . {ps_quote(str(HELPER))}
-                {textwrap.dedent(invocation).strip()}
-                """
-            )
-            driver.write_text(script, encoding="utf-8-sig")
-
-            command = [shell, "-NoProfile"]
-            if Path(shell).name.lower() == "powershell.exe":
-                command.extend(["-ExecutionPolicy", "Bypass"])
-            command.extend(["-File", str(driver)])
+            command = [
+                sys.executable,
+                str(HELPER),
+                "--work-item",
+                "issue43",
+                "--name",
+                name,
+                "--",
+                sys.executable,
+                "-c",
+                child_code,
+            ]
 
             completed = subprocess.run(
                 command,
@@ -63,94 +46,61 @@ class ShareablePowerShellCommandLogTests(unittest.TestCase):
             )
             combined = completed.stdout + completed.stderr
             logs = re.findall(r"(?m)^LOG=(.+)\r?$", combined)
-            return completed, combined, logs, temp_path
 
-    def assert_log_path(self, log_value: str, temp_path: Path) -> tuple[Path, str]:
-        log_path = Path(log_value.strip())
+            log_path = None
+            log_text = None
+            if logs:
+                log_path = Path(logs[-1].strip())
+                if log_path.is_file():
+                    log_text = log_path.read_text(encoding="utf-8-sig")
+
+            return completed, combined, logs, log_path, log_text, temp_path
+
+    def assert_log_location(self, log_path: Path, temp_path: Path):
+        self.assertIsNotNone(log_path)
         self.assertTrue(log_path.is_file())
         self.assertEqual(log_path.parent, temp_path / "ai-dev-starter" / "issue43")
         self.assertFalse(str(log_path).startswith(str(ROOT)))
-        return log_path, log_path.read_bytes().decode("utf-8-sig")
 
-    def test_scriptblock_output_is_shown_and_logged_as_utf8(self):
-        invocation = r"""
-        $result = Invoke-ShareableCommandLog `
-            -Name 'script-output' `
-            -WorkItem 'issue43' `
-            -ScriptBlock {
-                Write-Output 'plain-output'
-                Write-Output '日本語-✓'
-            }
-        Write-Host ('RETURN_LOG=' + $result.LogPath)
-        """
+    def test_stdout_and_utf8_text_are_shown_and_logged(self):
+        completed, combined, logs, log_path, log_text, temp_path = self.run_logger(
+            "stdout-utf8",
+            "print('plain-output'); print('日本語-✓')",
+        )
 
-        for shell in self.shells:
-            with self.subTest(shell=shell):
-                completed, combined, logs, temp_path = self.run_driver(shell, invocation)
-                self.assertEqual(
-                    completed.returncode,
-                    0,
-                    msg=f"shell={shell}\nstdout={completed.stdout}\nstderr={completed.stderr}",
-                )
-                self.assertEqual(len(logs), 1, msg=combined)
-                log_path, log_text = self.assert_log_path(logs[0], temp_path)
-                self.assertIn("plain-output", combined)
-                self.assertIn("日本語-✓", combined)
-                self.assertIn("plain-output", log_text)
-                self.assertIn("日本語-✓", log_text)
-                self.assertIn(f"RETURN_LOG={log_path}", combined)
+        self.assertEqual(completed.returncode, 0, msg=combined)
+        self.assertEqual(len(logs), 1, msg=combined)
+        self.assert_log_location(log_path, temp_path)
+        self.assertIn("plain-output", combined)
+        self.assertIn("日本語-✓", combined)
+        self.assertIn("plain-output", log_text)
+        self.assertIn("日本語-✓", log_text)
+        self.assertIn("EXIT_CODE=0", log_text)
 
-    def test_native_nonzero_stdout_stderr_and_exit_code_are_shareable(self):
-        invocation = r"""
-        $result = Invoke-ShareableCommandLog `
-            -Name 'native-nonzero' `
-            -WorkItem 'issue43' `
-            -Command 'cmd.exe' `
-            -Arguments @('/d', '/c', 'echo native-out & echo native-err 1>&2 & exit /b 7')
-        Write-Host ('RETURN_EXIT_CODE=' + $result.ExitCode)
-        """
+    def test_stderr_and_nonzero_exit_are_shown_logged_and_returned(self):
+        completed, combined, logs, log_path, log_text, temp_path = self.run_logger(
+            "stderr-nonzero",
+            "import sys; print('child-out'); print('child-err', file=sys.stderr); sys.exit(7)",
+        )
 
-        for shell in self.shells:
-            with self.subTest(shell=shell):
-                completed, combined, logs, temp_path = self.run_driver(shell, invocation)
-                self.assertEqual(
-                    completed.returncode,
-                    0,
-                    msg=f"shell={shell}\nstdout={completed.stdout}\nstderr={completed.stderr}",
-                )
-                self.assertEqual(len(logs), 1, msg=combined)
-                _, log_text = self.assert_log_path(logs[0], temp_path)
-                self.assertIn("native-out", combined)
-                self.assertIn("native-err", combined)
-                self.assertIn("native-out", log_text)
-                self.assertIn("native-err", log_text)
-                self.assertIn("EXIT_CODE=7", log_text)
-                self.assertIn("RETURN_EXIT_CODE=7", combined)
+        self.assertEqual(completed.returncode, 7, msg=combined)
+        self.assertEqual(len(logs), 1, msg=combined)
+        self.assert_log_location(log_path, temp_path)
+        self.assertIn("child-out", combined)
+        self.assertIn("child-err", combined)
+        self.assertIn("child-out", log_text)
+        self.assertIn("child-err", log_text)
+        self.assertIn("EXIT_CODE=7", log_text)
 
     def test_repeated_name_generates_distinct_log_files(self):
-        invocation = r"""
-        Invoke-ShareableCommandLog `
-            -Name 'repeat' `
-            -WorkItem 'issue43' `
-            -ScriptBlock { Write-Output 'first' } | Out-Null
-        Invoke-ShareableCommandLog `
-            -Name 'repeat' `
-            -WorkItem 'issue43' `
-            -ScriptBlock { Write-Output 'second' } | Out-Null
-        """
+        first = self.run_logger("repeat", "print('first')")
+        second = self.run_logger("repeat", "print('second')")
 
-        for shell in self.shells:
-            with self.subTest(shell=shell):
-                completed, combined, logs, temp_path = self.run_driver(shell, invocation)
-                self.assertEqual(
-                    completed.returncode,
-                    0,
-                    msg=f"shell={shell}\nstdout={completed.stdout}\nstderr={completed.stderr}",
-                )
-                self.assertEqual(len(logs), 2, msg=combined)
-                self.assertNotEqual(logs[0], logs[1])
-                for log_value in logs:
-                    self.assert_log_path(log_value, temp_path)
+        self.assertEqual(first[0].returncode, 0, msg=first[1])
+        self.assertEqual(second[0].returncode, 0, msg=second[1])
+        self.assertEqual(len(first[2]), 1, msg=first[1])
+        self.assertEqual(len(second[2]), 1, msg=second[1])
+        self.assertNotEqual(first[3].name, second[3].name)
 
 
 if __name__ == "__main__":
