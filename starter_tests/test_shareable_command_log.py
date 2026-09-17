@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -13,48 +14,49 @@ HELPER = ROOT / "scripts" / "shareable_command_log.py"
 
 class ShareableCommandLogTests(unittest.TestCase):
     def run_logger(self, name: str, child_code: str):
-        with tempfile.TemporaryDirectory(prefix="issue43-shareable-log-") as temp_dir:
-            temp_path = Path(temp_dir)
-            env = os.environ.copy()
-            env["TEMP"] = str(temp_path)
-            env["TMP"] = str(temp_path)
-            env["PYTHONIOENCODING"] = "utf-8"
+        temp_path = Path(tempfile.mkdtemp(prefix="issue43-shareable-log-"))
+        self.addCleanup(shutil.rmtree, temp_path, ignore_errors=True)
 
-            command = [
-                sys.executable,
-                str(HELPER),
-                "--work-item",
-                "issue43",
-                "--name",
-                name,
-                "--",
-                sys.executable,
-                "-c",
-                child_code,
-            ]
+        env = os.environ.copy()
+        env["TEMP"] = str(temp_path)
+        env["TMP"] = str(temp_path)
+        env["PYTHONIOENCODING"] = "utf-8"
 
-            completed = subprocess.run(
-                command,
-                cwd=ROOT,
-                env=env,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                capture_output=True,
-                timeout=30,
-                check=False,
-            )
-            combined = completed.stdout + completed.stderr
-            logs = re.findall(r"(?m)^LOG=(.+)\r?$", combined)
+        command = [
+            sys.executable,
+            str(HELPER),
+            "--work-item",
+            "issue43",
+            "--name",
+            name,
+            "--",
+            sys.executable,
+            "-c",
+            child_code,
+        ]
 
-            log_path = None
-            log_text = None
-            if logs:
-                log_path = Path(logs[-1].strip())
-                if log_path.is_file():
-                    log_text = log_path.read_text(encoding="utf-8-sig")
+        completed = subprocess.run(
+            command,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+        combined = completed.stdout + completed.stderr
+        logs = re.findall(r"(?m)^LOG=(.+)\r?$", combined)
 
-            return completed, combined, logs, log_path, log_text, temp_path
+        log_path = None
+        log_text = None
+        if logs:
+            log_path = Path(logs[-1].strip())
+            if log_path.is_file():
+                log_text = log_path.read_text(encoding="utf-8-sig")
+
+        return completed, combined, logs, log_path, log_text, temp_path
 
     def assert_log_location(self, log_path: Path, temp_path: Path):
         self.assertIsNotNone(log_path)
