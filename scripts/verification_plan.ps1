@@ -24,7 +24,6 @@ function Get-VerificationLogOutcome {
     if ($markers.Count -ne 1) {
         throw ("verification log must contain exactly one terminal RESULT record; found {0}" -f $markers.Count)
     }
-
     if ($lines[$lines.Count - 1] -ne $markers[0]) {
         throw "verification terminal RESULT record must be the final log record"
     }
@@ -71,7 +70,6 @@ function Invoke-VerificationPlan {
         if ($Record -match "[`r`n]") {
             throw "verification controller record must be one physical line"
         }
-
         [System.IO.File]::AppendAllText(
             $logPath,
             $Record + [Environment]::NewLine,
@@ -140,6 +138,33 @@ function Invoke-VerificationPlan {
         return $exception
     }
 
+    # This parser is deliberately controller-local. The authoritative plan path
+    # must not depend on a caller-replaceable public consumer for self-validation.
+    $parseLogOutcome = {
+        param([string]$LiteralPath)
+
+        $lines = [System.IO.File]::ReadAllLines($LiteralPath)
+        if ($lines.Count -eq 0) {
+            throw "verification log is empty"
+        }
+
+        $markers = @()
+        foreach ($line in $lines) {
+            if ($line -match '^RESULT=(PASS|FAIL|BLOCKED)$') {
+                $markers += $line
+            }
+        }
+
+        if ($markers.Count -ne 1) {
+            throw ("verification log must contain exactly one terminal RESULT record; found {0}" -f $markers.Count)
+        }
+        if ($lines[$lines.Count - 1] -ne $markers[0]) {
+            throw "verification terminal RESULT record must be the final log record"
+        }
+
+        return ($markers[0] -replace '^RESULT=', '')
+    }
+
     $reservedRecordNames = @(
         "FORMAT",
         "ATTEMPT_ID",
@@ -197,11 +222,8 @@ function Invoke-VerificationPlan {
         & $writeField "PROJECT" $plan.project
         & $writeField "PURPOSE" $plan.purpose
 
-        # Validate the complete plan before executing any step. This prevents an
-        # unknown later field/type from being discovered only after earlier
-        # state-changing native work has already run.
+        # Validate the entire plan before running the first executable step.
         $stepKinds = @{}
-        $stepIndexes = @{}
         for ($index = 0; $index -lt $steps.Count; $index++) {
             $step = $steps[$index]
             $where = "step[{0}]" -f $index
@@ -293,7 +315,6 @@ function Invoke-VerificationPlan {
             }
 
             $stepKinds[$step.id] = $step.type
-            $stepIndexes[$step.id] = $index
         }
 
         $results = @{}
@@ -382,7 +403,6 @@ function Invoke-VerificationPlan {
                     if ($null -eq $referenced) {
                         throw ("missing runtime result for referenced step: {0}" -f $step.step)
                     }
-
                     if (@($referenced.Output).Count -ne 0) {
                         $exception = & $newOutcomeException `
                             ("expected no output from step '{0}'" -f $step.step) `
@@ -431,7 +451,7 @@ function Invoke-VerificationPlan {
 
     if ($null -eq $terminalError) {
         try {
-            $verifiedOutcome = Get-VerificationLogOutcome -LiteralPath $logPath
+            $verifiedOutcome = & $parseLogOutcome $logPath
             if ($verifiedOutcome -ne $outcome) {
                 throw ("verification terminal outcome mismatch: expected {0}, got {1}" -f $outcome, $verifiedOutcome)
             }
