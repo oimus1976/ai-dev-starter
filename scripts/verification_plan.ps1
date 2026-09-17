@@ -51,7 +51,11 @@ function Invoke-VerificationPlan {
         if ([string]::IsNullOrWhiteSpace($env:TEMP)) {
             throw "TEMP is not available and LogRoot was not provided"
         }
-        $LogRoot = [System.IO.Path]::Combine($env:TEMP, "verification-plan-logs")
+        $LogRoot = [System.IO.Path]::Combine(
+            $env:TEMP,
+            "ai-dev-starter-logs",
+            "verification-plan"
+        )
     }
 
     $fullLogRoot = [System.IO.Path]::GetFullPath($LogRoot)
@@ -70,6 +74,7 @@ function Invoke-VerificationPlan {
         if ($Record -match "[`r`n]") {
             throw "verification controller record must be one physical line"
         }
+
         [System.IO.File]::AppendAllText(
             $logPath,
             $Record + [Environment]::NewLine,
@@ -138,8 +143,9 @@ function Invoke-VerificationPlan {
         return $exception
     }
 
-    # This parser is deliberately controller-local. The authoritative plan path
-    # must not depend on a caller-replaceable public consumer for self-validation.
+    # The authoritative controller validates its own terminal evidence through a
+    # local parser rather than through the public consumer command, which a caller
+    # could deliberately replace in the surrounding session.
     $parseLogOutcome = {
         param([string]$LiteralPath)
 
@@ -212,6 +218,9 @@ function Invoke-VerificationPlan {
         if ($plan.purpose -isnot [string] -or $plan.purpose -notmatch '^[A-Za-z0-9._-]+$') {
             throw "plan purpose is missing or invalid"
         }
+        if ($plan.steps -isnot [System.Array]) {
+            throw "plan steps must be a JSON array"
+        }
 
         $steps = @($plan.steps)
         if ($steps.Count -eq 0) {
@@ -222,7 +231,9 @@ function Invoke-VerificationPlan {
         & $writeField "PROJECT" $plan.project
         & $writeField "PURPOSE" $plan.purpose
 
-        # Validate the entire plan before running the first executable step.
+        # Validate the complete plan before running the first executable step.
+        # This includes semantic checks that would otherwise fail only during a
+        # later cast or launch, after an earlier Native step had already mutated state.
         $stepKinds = @{}
         for ($index = 0; $index -lt $steps.Count; $index++) {
             $step = $steps[$index]
@@ -254,13 +265,19 @@ function Invoke-VerificationPlan {
                         @("id", "type", "command", "arguments", "accepted_exit_codes", "failure_outcome") `
                         $where
 
-                    if ($step.command -isnot [string] -or [string]::IsNullOrWhiteSpace($step.command)) {
-                        throw ("Native command must be a non-empty string in {0}" -f $where)
+                    if ($step.command -isnot [string] -or $step.command -notmatch '^[A-Za-z0-9._-]+$') {
+                        throw ("Native command must be a simple application name in {0}" -f $where)
                     }
-                    foreach ($argument in @($step.arguments)) {
+                    if ($step.arguments -isnot [System.Array]) {
+                        throw ("Native arguments must be a JSON array in {0}" -f $where)
+                    }
+                    foreach ($argument in $step.arguments) {
                         if ($argument -isnot [string]) {
                             throw ("Native arguments must all be strings in {0}" -f $where)
                         }
+                    }
+                    if ($step.accepted_exit_codes -isnot [System.Array]) {
+                        throw ("Native accepted_exit_codes must be a JSON array in {0}" -f $where)
                     }
                     $acceptedCodes = @($step.accepted_exit_codes)
                     if ($acceptedCodes.Count -eq 0) {
@@ -269,6 +286,10 @@ function Invoke-VerificationPlan {
                     foreach ($code in $acceptedCodes) {
                         if ($code -isnot [int] -and $code -isnot [long]) {
                             throw ("Native accepted_exit_codes must contain integers in {0}" -f $where)
+                        }
+                        $code64 = [long]$code
+                        if ($code64 -lt [int]::MinValue -or $code64 -gt [int]::MaxValue) {
+                            throw ("Native accepted_exit_codes must fit Int32 in {0}" -f $where)
                         }
                     }
                     if ($step.failure_outcome -notin @("FAIL", "BLOCKED")) {
@@ -307,6 +328,9 @@ function Invoke-VerificationPlan {
                     }
                     if ($reservedRecordNames -contains $step.name) {
                         throw ("Record name is reserved: {0}" -f $step.name)
+                    }
+                    if ($step.value -isnot [string]) {
+                        throw ("Record value must be a string in {0}" -f $where)
                     }
                 }
                 default {
