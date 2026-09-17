@@ -18,6 +18,8 @@ The declarative path does not accept an arbitrary authoritative PowerShell callb
 
 Do not silently substitute the legacy body API when a declarative plan cannot express a required HIGH_IMPACT assertion. Either add a reviewed declarative primitive or report that the higher-assurance path does not yet express the gate.
 
+Issue #42 records the legacy API's current lifecycle state as `compatibility-only`. Runtime deprecation warnings, renaming, and removal are deferred; later lifecycle transitions require explicit migration evidence and review. See `docs/history/issue-42-legacy-verification-api-migration.md`.
+
 ## Declarative verification plan
 
 Load the canonical helper and invoke a JSON plan:
