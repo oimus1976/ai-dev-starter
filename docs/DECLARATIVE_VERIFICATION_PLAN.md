@@ -12,16 +12,17 @@ Use `Invoke-VerificationPlan` from `scripts/interactive_verification.ps1`. The i
 
 This path is intended for `HIGH_IMPACT` gate-producing procedures that can be expressed using the supported declarative vocabulary.
 
-It is designed to fail closed against:
+The **plan definition itself is trusted, reviewed gate configuration**. The controller is not a sandbox for an attacker who is allowed to choose arbitrary native commands or arguments. A `Native` step can intentionally invoke applications such as shells or interpreters, so a malicious plan author already has process-execution capability by design.
 
-- malformed or hostile plan data;
-- unknown step types or fields;
-- caller/native payloads that look like control records;
+The controller is designed to fail closed against:
+
+- malformed plan structure, unknown fields/types, and invalid value shapes/ranges;
+- untrusted native output or record values that look like control records;
 - PowerShell function/alias shadowing of safety-critical native resolution/serialization commands covered by regression tests;
 - stale or missing native exit status;
 - malformed durable logs containing zero, multiple, or non-final terminal markers.
 
-It does **not** claim an OS security boundary against arbitrary hostile code already executing with the same Windows user authority. Such code can modify files, processes, or the helper itself and requires an external OS/app-control boundary. Do not describe this helper as protection against that stronger threat model.
+It does **not** claim to sandbox malicious plan semantics, nor does it claim an OS security boundary against arbitrary hostile code already executing with the same Windows user authority. Such code can modify files, processes, environment state, or the helper itself and requires an external OS/app-control boundary. Do not describe this helper as protection against either stronger threat model.
 
 ## Plan schema
 
@@ -46,6 +47,8 @@ Required fields:
 - `failure_outcome`: `FAIL` or `BLOCKED`.
 
 The controller resolves only `Application` commands, requires a rooted resolved path, invokes that resolved path directly, clears the global `$LASTEXITCODE` immediately before launch, and requires a fresh exit status afterwards. Native stderr remains diagnostic when the exit code is accepted.
+
+The command and arguments are part of the trusted reviewed plan. Validation of their JSON shape does not make an arbitrary native command safe or non-destructive.
 
 ### `AssertOutputEmpty`
 
@@ -103,7 +106,7 @@ The controller owns terminal outcome. In a valid plan log:
 
 The controller self-validates its terminal evidence through a controller-local parser before reporting successful completion. This self-check does not depend on a caller-replaceable public consumer function.
 
-For later consumption of a persisted log, use `Get-VerificationLogOutcome`. It rejects logs with zero, multiple, or non-final terminal records. This is a structural terminal-marker check, not cryptographic authentication of the file or its origin.
+For later consumption of a persisted log, use `Get-VerificationLogOutcome`. It rejects logs with zero, multiple, or non-final terminal records. This is a structural terminal-marker check, not cryptographic authentication of the file, its origin, or the semantics of the plan that produced it.
 
 ## Relationship to the legacy body API
 
