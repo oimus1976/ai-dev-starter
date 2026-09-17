@@ -64,6 +64,16 @@ Exploration that is genuinely disposable does not need Issue/PR ceremony. Once w
 
 Post-merge cleanup is intentionally separate from verification. `post_merge_cleanup.py` reads merged-PR authority independently through authenticated GitHub CLI, plans by default, and requires `--execute` before changing local state. Remote branch deletion is a further explicit opt-in.
 
+## Shareable command logs
+
+For long terminal output that would otherwise need manual copy/paste into ChatGPT, use the lightweight logger:
+
+```text
+python scripts/shareable_command_log.py --work-item issue43 --name example -- git status --short --branch
+```
+
+The helper mirrors child-process output to the terminal and to a UTF-8 log under `%TEMP%\ai-dev-starter\<work-item>`, records the child exit code, and prints `LOG=<path>` at the end so the file can be uploaded directly. It is a convenience/handoff tool only; it does not define authoritative verification evidence or control which commands may run.
+
 ## Files
 
 - `BASELINE.md` — single normative source for authority, risk, review, evidence, and comprehension gates.
@@ -81,6 +91,7 @@ Post-merge cleanup is intentionally separate from verification. `post_merge_clea
 - `scripts/verify_local_closeout.py` — non-destructive local closeout verifier.
 - `scripts/closeout_state.py` — shared dependency-free Git/worktree state helpers used by closeout tooling.
 - `scripts/post_merge_cleanup.py` — fail-closed merged-PR cleanup planner/executor; dry-run by default.
+- `scripts/shareable_command_log.py` — dependency-free terminal-output mirror for uploading long command output without manual copy/paste.
 - `starter_tests/` — regression tests for ai-dev-starter itself.
 - `tests/` — reserved for generated projects' own tests.
 
