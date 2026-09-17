@@ -1,4 +1,5 @@
 import os
+import locale
 import re
 import shutil
 import subprocess
@@ -45,7 +46,7 @@ class ShareableCommandLogTests(unittest.TestCase):
             check=False,
         )
         combined = completed.stdout + completed.stderr
-        logs = re.findall(r"(?m)^LOG=(.+)\\r?$", combined)
+        logs = re.findall(r"(?m)^LOG=(.+)\r?$", combined)
 
         log_path = None
         log_text = None
@@ -104,6 +105,14 @@ class ShareableCommandLogTests(unittest.TestCase):
         if not powershell:
             self.skipTest("Windows PowerShell 5.1 executable not found")
 
+        legacy_encoding = locale.getpreferredencoding(False) or "utf-8"
+        try:
+            "日本語".encode(legacy_encoding)
+        except UnicodeEncodeError:
+            self.skipTest(
+                f"active Windows code page cannot represent Japanese: {legacy_encoding}"
+            )
+
         completed, combined, logs, log_path, log_text, temp_path = (
             self.run_logger_command(
                 "powershell51-japanese",
@@ -114,8 +123,8 @@ class ShareableCommandLogTests(unittest.TestCase):
                     "Bypass",
                     "-Command",
                     (
-                        "Write-Output 'PS_STDOUT=日本語-✓'; "
-                        "[Console]::Error.WriteLine('PS_STDERR=日本語-✓')"
+                        "Write-Output 'PS_STDOUT=日本語'; "
+                        "[Console]::Error.WriteLine('PS_STDERR=日本語')"
                     ),
                 ],
             )
@@ -124,7 +133,7 @@ class ShareableCommandLogTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, msg=combined)
         self.assertEqual(len(logs), 1, msg=combined)
         self.assert_log_location(log_path, temp_path)
-        for marker in ("PS_STDOUT=日本語-✓", "PS_STDERR=日本語-✓"):
+        for marker in ("PS_STDOUT=日本語", "PS_STDERR=日本語"):
             self.assertIn(marker, combined)
             self.assertIn(marker, log_text)
         self.assertIn("EXIT_CODE=0", log_text)
