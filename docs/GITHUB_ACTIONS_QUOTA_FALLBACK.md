@@ -33,50 +33,45 @@ Minimum evidence:
 
 A successful exact-head fallback requires the observed local HEAD to equal the independently established expected SHA, a clean worktree before the checks, and still-clean, unchanged HEAD afterwards. A dirty worktree may be diagnostic evidence, but it is not exact-head verification.
 
-### Interactive PowerShell
+### PowerShell authority path
 
-Use the canonical contract in `docs/INTERACTIVE_POWERSHELL_VERIFICATION.md` and `scripts/interactive_verification.ps1`.
+Use `scripts/interactive_verification.ps1` together with the authority split documented in `docs/INTERACTIVE_POWERSHELL_VERIFICATION.md`.
 
-The required shape is:
+For a new `HIGH_IMPACT` fallback gate, use `Invoke-VerificationPlan` only when `verification-plan-v1` can express every acceptance condition whose success will be claimed. See `docs/DECLARATIVE_VERIFICATION_PLAN.md`.
+
+Current v1 supports data-only `Native`, `AssertOutputEmpty`, and `Record` steps. It validates the complete plan before native execution, frames payloads, uses fresh native exit status, and owns the terminal result. Persisted logs must be consumed with the rule implemented by `Get-VerificationLogOutcome`: exactly one terminal marker, and that marker must be the final record.
+
+Current v1 does **not** provide a general output-equality assertion. Therefore it cannot, by itself, prove expected-vs-observed HEAD/branch/repository equality unless that comparison is expressed through a native command whose exit status authoritatively establishes the condition.
+
+Do not work around that limitation by using `Invoke-VerificationAttempt -Body { ... }` as equivalent HIGH_IMPACT terminal authority. The legacy arbitrary-body API remains for Issue #29 compatibility, but Issue #39 adversarial review proved that same-runspace body code can reach its raw writer. If the local fallback requires an assertion the declarative vocabulary cannot express, record the fallback as not yet fully expressible or extend the vocabulary in a separately reviewed change.
+
+A minimal plan invocation is:
 
 ```powershell
 . .\scripts\interactive_verification.ps1
 
-$expectedHead = "<authoritative-full-sha>"
-
-Invoke-VerificationAttempt `
-    -ProjectName "<project>" `
-    -Purpose "actions-quota-fallback" `
-    -Body {
-        param($ctx)
-
-        # Record repository, branch, expected/observed HEAD, and pre-status.
-        # Use Invoke-VerificationNative for every native command whose success matters.
-        # Call Stop-VerificationBlocked for unmet acceptance preconditions.
-        # Run the repository's real CI-equivalent local checks.
-        # Re-read HEAD and status after the checks.
-        # Do not write RESULT=PASS here; the wrapper owns the terminal marker.
-    }
+Invoke-VerificationPlan `
+    -PlanPath .\verification-plan.json `
+    -LogRoot "$env:TEMP\ai-dev-starter-logs\verification-plan"
 ```
 
-The body must contain all gate-producing work for the attempt. Do not paste later mutation or success statements after the bounded invocation.
+For every authoritative initialized plan attempt, require:
 
-For every initialized attempt the helper provides:
+- one dedicated UTF-8 log;
+- complete-plan validation before the first native step;
+- recorded command, structured arguments, resolved executable, output, and exit status where relevant;
+- controller-owned `RESULT=PASS|BLOCKED|FAIL`;
+- exactly one terminal result and final-record placement for persisted-log consumption;
+- `LOG=<path>` surfaced on the console;
+- no relabeling of local evidence as hosted CI success.
 
-- a dedicated log under `%TEMP%\<project>-logs\actions-quota-fallback\...` by default;
-- explicit UTF-8 log writing;
-- framed native-command evidence including JSON-framed `COMMAND=...`, `COMMAND_EXECUTABLE=...`, resolved application path `COMMAND_RESOLVED=...`, structured `COMMAND_ARGUMENTS_JSON=...`, JSON-framed `NATIVE_OUTPUT=...`, and `EXIT_CODE=...`; caller-provided `DISPLAY_COMMAND=...` is explanatory only and payload text cannot create standalone control records;
-- application-only resolution followed by direct invocation of the resolved executable path, preventing PowerShell function/alias shadowing;
-- fresh native-exit capture: the global `$LASTEXITCODE` is cleared before launch and a missing fresh status fails closed instead of reusing stale success; native stderr remains diagnostic when the exit code is accepted;
-- exactly one persisted terminal result in the normal evidence path: `RESULT=PASS`, `RESULT=BLOCKED`, or `RESULT=FAIL`; failure to persist terminal PASS evidence is itself a failed attempt, not PASS;
-- `LOG=<path>` on the console when the helper reaches its terminal reporting path, plus `LOG_WRITE_ERROR=...` if evidence writing fails;
-- no routine use of `exit`, so a failed bounded attempt does not intentionally terminate the interactive shell.
+The helper does not claim an OS security boundary against arbitrary hostile code already executing with the same Windows user authority.
 
-Before acceptance, the local fallback body for a specific repository must actually record the minimum evidence listed above. The generic helper cannot infer project-specific test commands or acceptance preconditions.
+Before acceptance, the project-specific fallback must actually establish every item in the minimum-evidence list above. The generic helper cannot infer project-specific CI-equivalent commands or acceptance preconditions.
 
 Do not mechanically copy Python commands to a non-Python project. The project-specific CI workflow remains the best reference for which local commands are equivalent.
 
-Repositories created before this helper existed do not inherit it automatically. Adopt the helper/contract explicitly before relying on this exact interactive pattern.
+Repositories created before this helper existed do not inherit it automatically. Adopt the helper/contract explicitly before relying on this pattern.
 
 ## 3. Evidence language
 
@@ -134,11 +129,12 @@ The fallback does not permanently weaken the repository's declared CI authority.
 For each active repository that needs this fallback:
 
 1. add or link this policy in the repository's operating instructions;
-2. adopt the interactive PowerShell helper/contract if interactive gate-producing PowerShell is used;
+2. adopt the interactive PowerShell authority contract if PowerShell gate procedures are used;
 3. identify the exact local commands equivalent to project CI;
-4. keep temp/ignored verification logs outside Git unless the repository explicitly requires tracked evidence;
-5. document quota/provider-blocked hosted runs as `UNAVAILABLE`, not PASS or code FAIL;
-6. retain Ready/merge human-final rules;
-7. decide separately whether a self-hosted runner is warranted.
+4. verify that the declarative vocabulary can express every claimed acceptance condition before treating it as HIGH_IMPACT terminal authority;
+5. keep temp/ignored verification logs outside Git unless the repository explicitly requires tracked evidence;
+6. document quota/provider-blocked hosted runs as `UNAVAILABLE`, not PASS or code FAIL;
+7. retain Ready/merge human-final rules;
+8. decide separately whether a self-hosted runner is warranted.
 
 Backport only the policy needed by the repository; do not copy unrelated starter changes merely for consistency.

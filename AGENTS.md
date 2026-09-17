@@ -67,21 +67,26 @@ A successful implementation, test, or review does not by itself authorize or pro
 
 ## Interactive PowerShell verification
 
-For state-changing or gate-producing PowerShell procedures intended for interactive copy/paste, use the bounded, logging-by-construction contract in `docs/INTERACTIVE_POWERSHELL_VERIFICATION.md` and the canonical helper `scripts/interactive_verification.ps1`.
+Use `docs/INTERACTIVE_POWERSHELL_VERIFICATION.md` and the canonical entry point `scripts/interactive_verification.ps1`.
 
-Keep all checks, permitted mutations, and success-producing work inside one `Invoke-VerificationAttempt` body. Do not append later mutation or success statements as separate top-level pasted commands after the bounded invocation.
+For a new `HIGH_IMPACT` gate, prefer the declarative `Invoke-VerificationPlan` authority path documented in `docs/DECLARATIVE_VERIFICATION_PLAN.md` when the required checks can be expressed by `verification-plan-v1`.
 
-For each initialized attempt:
+The declarative plan must be treated as data, not executable PowerShell. The controller must validate the entire plan before the first Native step, frame caller/native output, use fresh native exit status, and own the terminal result. Persisted results are consumable only when `Get-VerificationLogOutcome` confirms exactly one `RESULT=PASS|FAIL|BLOCKED` record and that record is final.
 
-- create one dedicated log before gate/mutation work begins;
-- record relevant commands, output, native exit codes, repository/branch/HEAD, and pre/post status where applicable;
-- treat `$LASTEXITCODE` as authoritative for native commands;
+`Invoke-VerificationAttempt -Body { ... }` remains a lower-assurance compatibility surface for the Issue #29 bounded-execution/logging behavior. Do not use the arbitrary same-runspace body API as the sole terminal-authority evidence for a new `HIGH_IMPACT` gate: Issue #39 adversarial review proved that body code can reach the legacy raw writer. Do not describe `Internal` naming, module privacy, file locking, or manually assigned `ConstrainedLanguage` as a security boundary.
+
+If a required HIGH_IMPACT assertion cannot be represented by the current declarative vocabulary, do not silently fall back to arbitrary body code and claim equivalent authority. Extend the declarative vocabulary in a separately reviewed change or report the gate as not yet expressible.
+
+For each authoritative initialized attempt:
+
+- create one dedicated UTF-8 log;
+- record relevant command/output/native-exit evidence;
 - keep BLOCKED / FAIL / PASS mutually exclusive;
-- let the wrapper own the single terminal marker and emit PASS only at successful completion;
-- surface `LOG=<path>` so the evidence is immediately locatable;
-- do not use `exit` merely to stop the interactive procedure.
+- require exactly one final terminal marker for persisted-log consumption;
+- surface `LOG=<path>` so evidence is locatable;
+- do not reconstruct gate evidence later from terminal history.
 
-Do not reconstruct gate evidence later from terminal history when the reusable pattern can record it during execution.
+The helper does not claim an OS security boundary against arbitrary hostile code already executing with the same Windows user authority.
 
 ## Hosted CI quota/unavailability
 

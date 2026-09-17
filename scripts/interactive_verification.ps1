@@ -267,3 +267,6 @@ function Invoke-VerificationAttempt {
         Microsoft.PowerShell.Utility\Write-Host ("LOG={0}" -f $logPath)
     }
 }
+
+$verificationPlanController = [System.IO.Path]::Combine($PSScriptRoot, "verification_plan.ps1")
+. $verificationPlanController
