@@ -117,15 +117,7 @@ function Invoke-VerificationNative {
 
     $previousErrorActionPreference = $ErrorActionPreference
     try {
-        # Clear the global automatic variable rather than creating a local
-        # shadow. A successfully launched native application must establish
-        # a fresh exit status for this invocation.
         $global:LASTEXITCODE = $null
-
-        # Windows PowerShell 5.1 can surface redirected native stderr as
-        # ErrorRecord objects. Native success remains authoritative by exit code.
-        # Invoke the already-resolved application path so functions/aliases
-        # cannot shadow the executable between resolution and launch.
         $ErrorActionPreference = "Continue"
         $output = & $resolvedPath @Arguments 2>&1
         $exitCode = $global:LASTEXITCODE
@@ -200,8 +192,6 @@ function Invoke-VerificationAttempt {
     $attemptId = "{0}-{1}-{2}" -f $stamp, $PID, $suffix
     $logPath = Microsoft.PowerShell.Management\Join-Path $LogRoot ("attempt-{0}.log" -f $attemptId)
 
-    # Explicit UTF-8 creation. Windows PowerShell 5.1 may include a BOM; both
-    # Windows PowerShell and PowerShell 7 treat the resulting file as UTF-8.
     "FORMAT=interactive-verification-v1" | Microsoft.PowerShell.Utility\Out-File -LiteralPath $logPath -Encoding utf8
 
     $context = [pscustomobject]@{
@@ -219,8 +209,6 @@ function Invoke-VerificationAttempt {
         Write-VerificationInternalRecord -Context $context -Record ("PURPOSE={0}" -f $Purpose)
 
         & $Body $context
-
-        # PASS is assigned only after the entire guarded body completes.
         $outcome = "PASS"
     }
     catch {
@@ -248,7 +236,6 @@ function Invoke-VerificationAttempt {
         throw $originalError
     }
     finally {
-        # This is the only terminal-marker write in an initialized attempt.
         try {
             Write-VerificationInternalRecord -Context $context -Record ("RESULT={0}" -f $outcome)
         }
@@ -256,9 +243,6 @@ function Invoke-VerificationAttempt {
             $terminalLogError = $_
             Microsoft.PowerShell.Utility\Write-Host ("LOG_WRITE_ERROR={0}" -f $terminalLogError.Exception.Message)
             Microsoft.PowerShell.Utility\Write-Host ("LOG={0}" -f $logPath)
-
-            # A body that otherwise succeeded must not report success when its
-            # terminal PASS evidence could not be persisted.
             if ($outcome -eq "PASS") {
                 throw $terminalLogError
             }
@@ -267,3 +251,6 @@ function Invoke-VerificationAttempt {
         Microsoft.PowerShell.Utility\Write-Host ("LOG={0}" -f $logPath)
     }
 }
+
+$verificationPlanController = [System.IO.Path]::Combine($PSScriptRoot, "verification_plan.ps1")
+. $verificationPlanController
