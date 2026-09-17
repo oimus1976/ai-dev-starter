@@ -13,7 +13,7 @@ HELPER = ROOT / "scripts" / "shareable_command_log.py"
 
 
 class ShareableCommandLogTests(unittest.TestCase):
-    def run_logger(self, name: str, child_code: str):
+    def run_logger_command(self, name: str, child_command: list[str]):
         temp_path = Path(tempfile.mkdtemp(prefix="issue43-shareable-log-"))
         self.addCleanup(shutil.rmtree, temp_path, ignore_errors=True)
 
@@ -30,9 +30,7 @@ class ShareableCommandLogTests(unittest.TestCase):
             "--name",
             name,
             "--",
-            sys.executable,
-            "-c",
-            child_code,
+            *child_command,
         ]
 
         completed = subprocess.run(
@@ -47,7 +45,7 @@ class ShareableCommandLogTests(unittest.TestCase):
             check=False,
         )
         combined = completed.stdout + completed.stderr
-        logs = re.findall(r"(?m)^LOG=(.+)\r?$", combined)
+        logs = re.findall(r"(?m)^LOG=(.+)\\r?$", combined)
 
         log_path = None
         log_text = None
@@ -57,6 +55,12 @@ class ShareableCommandLogTests(unittest.TestCase):
                 log_text = log_path.read_text(encoding="utf-8-sig")
 
         return completed, combined, logs, log_path, log_text, temp_path
+
+    def run_logger(self, name: str, child_code: str):
+        return self.run_logger_command(
+            name,
+            [sys.executable, "-c", child_code],
+        )
 
     def assert_log_location(self, log_path: Path, temp_path: Path):
         self.assertIsNotNone(log_path)
@@ -93,6 +97,37 @@ class ShareableCommandLogTests(unittest.TestCase):
         self.assertIn("child-out", log_text)
         self.assertIn("child-err", log_text)
         self.assertIn("EXIT_CODE=7", log_text)
+
+    @unittest.skipUnless(os.name == "nt", "Windows PowerShell boundary is Windows-only")
+    def test_windows_powershell_51_japanese_stdout_stderr_remain_readable(self):
+        powershell = shutil.which("powershell.exe")
+        if not powershell:
+            self.skipTest("Windows PowerShell 5.1 executable not found")
+
+        completed, combined, logs, log_path, log_text, temp_path = (
+            self.run_logger_command(
+                "powershell51-japanese",
+                [
+                    powershell,
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    (
+                        "Write-Output 'PS_STDOUT=日本語-✓'; "
+                        "[Console]::Error.WriteLine('PS_STDERR=日本語-✓')"
+                    ),
+                ],
+            )
+        )
+
+        self.assertEqual(completed.returncode, 0, msg=combined)
+        self.assertEqual(len(logs), 1, msg=combined)
+        self.assert_log_location(log_path, temp_path)
+        for marker in ("PS_STDOUT=日本語-✓", "PS_STDERR=日本語-✓"):
+            self.assertIn(marker, combined)
+            self.assertIn(marker, log_text)
+        self.assertIn("EXIT_CODE=0", log_text)
 
     def test_repeated_name_generates_distinct_log_files(self):
         first = self.run_logger("repeat", "print('first')")
