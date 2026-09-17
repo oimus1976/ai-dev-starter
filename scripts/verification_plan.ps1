@@ -16,7 +16,7 @@ function Get-VerificationLogOutcome {
 
     $markers = @()
     foreach ($line in $lines) {
-        if ($line -match '^RESULT=(PASS|FAIL|BLOCKED)$') {
+        if ($line -cmatch '^RESULT=(PASS|FAIL|BLOCKED)$') {
             $markers += $line
         }
     }
@@ -24,11 +24,11 @@ function Get-VerificationLogOutcome {
     if ($markers.Count -ne 1) {
         throw ("verification log must contain exactly one terminal RESULT record; found {0}" -f $markers.Count)
     }
-    if ($lines[$lines.Count - 1] -ne $markers[0]) {
+    if ($lines[$lines.Count - 1] -cne $markers[0]) {
         throw "verification terminal RESULT record must be the final log record"
     }
 
-    return ($markers[0] -replace '^RESULT=', '')
+    return ($markers[0] -creplace '^RESULT=', '')
 }
 
 function Invoke-VerificationPlan {
@@ -96,10 +96,10 @@ function Invoke-VerificationPlan {
             [AllowNull()][object]$Value
         )
 
-        if ($Name -notmatch '^[A-Z0-9_]+$') {
+        if ($Name -cnotmatch '^[A-Z0-9_]+$') {
             throw ("invalid verification field name: {0}" -f $Name)
         }
-        if ($Name -eq "RESULT") {
+        if ($Name -ceq "RESULT") {
             throw "RESULT is controller-owned"
         }
 
@@ -121,12 +121,12 @@ function Invoke-VerificationPlan {
 
         $names = @($Object.PSObject.Properties.Name)
         foreach ($name in $names) {
-            if ($Allowed -notcontains [string]$name) {
+            if ($Allowed -cnotcontains [string]$name) {
                 throw ("unknown field '{0}' in {1}" -f $name, $Where)
             }
         }
         foreach ($requiredName in $Required) {
-            if ($names -notcontains $requiredName) {
+            if ($names -cnotcontains $requiredName) {
                 throw ("missing required field '{0}' in {1}" -f $requiredName, $Where)
             }
         }
@@ -156,7 +156,7 @@ function Invoke-VerificationPlan {
 
         $markers = @()
         foreach ($line in $lines) {
-            if ($line -match '^RESULT=(PASS|FAIL|BLOCKED)$') {
+            if ($line -cmatch '^RESULT=(PASS|FAIL|BLOCKED)$') {
                 $markers += $line
             }
         }
@@ -164,11 +164,11 @@ function Invoke-VerificationPlan {
         if ($markers.Count -ne 1) {
             throw ("verification log must contain exactly one terminal RESULT record; found {0}" -f $markers.Count)
         }
-        if ($lines[$lines.Count - 1] -ne $markers[0]) {
+        if ($lines[$lines.Count - 1] -cne $markers[0]) {
             throw "verification terminal RESULT record must be the final log record"
         }
 
-        return ($markers[0] -replace '^RESULT=', '')
+        return ($markers[0] -creplace '^RESULT=', '')
     }
 
     $reservedRecordNames = @(
@@ -209,7 +209,7 @@ function Invoke-VerificationPlan {
             @("schema", "project", "purpose", "steps") `
             "plan"
 
-        if ($plan.schema -isnot [string] -or $plan.schema -ne "verification-plan-v1") {
+        if ($plan.schema -isnot [string] -or $plan.schema -cne "verification-plan-v1") {
             throw "plan schema must be exactly 'verification-plan-v1'"
         }
         if ($plan.project -isnot [string] -or $plan.project -notmatch '^[A-Za-z0-9._-]+$') {
@@ -244,7 +244,7 @@ function Invoke-VerificationPlan {
             }
 
             $baseNames = @($step.PSObject.Properties.Name)
-            if ($baseNames -notcontains "id" -or $baseNames -notcontains "type") {
+            if ($baseNames -cnotcontains "id" -or $baseNames -cnotcontains "type") {
                 throw ("{0} must contain id and type" -f $where)
             }
             if ($step.id -isnot [string] -or $step.id -notmatch '^[A-Za-z0-9._-]+$') {
@@ -257,7 +257,7 @@ function Invoke-VerificationPlan {
                 throw ("step type must be a string in {0}" -f $where)
             }
 
-            switch ($step.type) {
+            switch -CaseSensitive ($step.type) {
                 "Native" {
                     & $validateFields `
                         $step `
@@ -292,7 +292,7 @@ function Invoke-VerificationPlan {
                             throw ("Native accepted_exit_codes must fit Int32 in {0}" -f $where)
                         }
                     }
-                    if ($step.failure_outcome -notin @("FAIL", "BLOCKED")) {
+                    if ($step.failure_outcome -cnotin @("FAIL", "BLOCKED")) {
                         throw ("Native failure_outcome must be FAIL or BLOCKED in {0}" -f $where)
                     }
                 }
@@ -306,13 +306,13 @@ function Invoke-VerificationPlan {
                     if ($step.step -isnot [string] -or [string]::IsNullOrWhiteSpace($step.step)) {
                         throw ("AssertOutputEmpty step reference must be a string in {0}" -f $where)
                     }
-                    if ($step.failure_outcome -notin @("FAIL", "BLOCKED")) {
+                    if ($step.failure_outcome -cnotin @("FAIL", "BLOCKED")) {
                         throw ("AssertOutputEmpty failure_outcome must be FAIL or BLOCKED in {0}" -f $where)
                     }
                     if (-not $stepKinds.ContainsKey($step.step)) {
                         throw ("AssertOutputEmpty must reference an earlier step: {0}" -f $step.step)
                     }
-                    if ($stepKinds[$step.step] -ne "Native") {
+                    if ($stepKinds[$step.step] -cne "Native") {
                         throw ("AssertOutputEmpty may reference only a Native step: {0}" -f $step.step)
                     }
                 }
@@ -323,10 +323,10 @@ function Invoke-VerificationPlan {
                         @("id", "type", "name", "value") `
                         $where
 
-                    if ($step.name -isnot [string] -or $step.name -notmatch '^[A-Z0-9_]+$') {
+                    if ($step.name -isnot [string] -or $step.name -cnotmatch '^[A-Z0-9_]+$') {
                         throw ("Record name is missing or invalid in {0}" -f $where)
                     }
-                    if ($reservedRecordNames -contains $step.name) {
+                    if ($reservedRecordNames -ccontains $step.name) {
                         throw ("Record name is reserved: {0}" -f $step.name)
                     }
                     if ($step.value -isnot [string]) {
@@ -347,7 +347,7 @@ function Invoke-VerificationPlan {
             & $writeField "STEP_ID" $step.id
             & $writeField "STEP_TYPE" $step.type
 
-            switch ($step.type) {
+            switch -CaseSensitive ($step.type) {
                 "Native" {
                     $arguments = [string[]]@($step.arguments)
                     $acceptedExitCodes = [int[]]@($step.accepted_exit_codes)
@@ -453,7 +453,7 @@ function Invoke-VerificationPlan {
             $currentException = $currentException.InnerException
         }
 
-        if ($marker -eq "BLOCKED") {
+        if ($marker -ceq "BLOCKED") {
             $outcome = "BLOCKED"
         }
 
@@ -476,7 +476,7 @@ function Invoke-VerificationPlan {
     if ($null -eq $terminalError) {
         try {
             $verifiedOutcome = & $parseLogOutcome $logPath
-            if ($verifiedOutcome -ne $outcome) {
+            if ($verifiedOutcome -cne $outcome) {
                 throw ("verification terminal outcome mismatch: expected {0}, got {1}" -f $outcome, $verifiedOutcome)
             }
         }
