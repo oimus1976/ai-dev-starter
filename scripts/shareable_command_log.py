@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import locale
 import os
 import re
 import subprocess
@@ -54,6 +55,16 @@ def _log_path(work_item: str, name: str) -> Path:
     return log_root / f"{name}-{stamp}-{os.getpid()}-{suffix}.log"
 
 
+def _decode_child_line(data: bytes) -> str:
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        fallback = locale.getpreferredencoding(False) or "utf-8"
+        if fallback.lower().replace("_", "-") == "utf-8":
+            return data.decode("utf-8", errors="replace")
+        return data.decode(fallback, errors="replace")
+
+
 def _write_line(log_file, text: str) -> None:
     sys.stdout.write(text)
     sys.stdout.flush()
@@ -78,14 +89,12 @@ def main(argv: list[str] | None = None) -> int:
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                bufsize=1,
+                text=False,
+                bufsize=0,
             )
             assert process.stdout is not None
             for line in process.stdout:
-                _write_line(log_file, line)
+                _write_line(log_file, _decode_child_line(line))
             exit_code = process.wait()
         except OSError as exc:
             _write_line(log_file, f"ERROR={exc}\n")
