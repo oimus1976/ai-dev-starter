@@ -34,6 +34,7 @@ jobs:
           scripts/verify_local_closeout.py
           scripts/post_merge_cleanup.py
           scripts/branch_cleanup_audit.py
+          scripts/shareable_command_log.py
       - name: Run canonical starter regression tests
         if: github.repository == 'oimus1976/ai-dev-starter'
         run: python -m unittest discover -s starter_tests -v
@@ -71,3 +72,6 @@ jobs:
       - name: Run interactive PowerShell verification regressions
         if: runner.os == 'Windows'
         run: python -m unittest discover -s starter_tests -p "test_interactive_powershell*.py" -v
+      - name: Run shareable command log regressions
+        if: runner.os == 'Windows'
+        run: python -m unittest starter_tests.test_shareable_command_log -v
