@@ -116,12 +116,12 @@ However, post-merge adversarial review demonstrated that a body running in the s
 
 Accordingly:
 
-- do not use the legacy arbitrary-body API as the sole terminal-authority evidence for a new `HIGH_IMPACT` gate;
+- for a new `HIGH_IMPACT` gate, do not use the legacy arbitrary-body API to supply a required assertion, terminal-authority evidence, or a PASS / FAIL / BLOCKED determination, whether alone or combined with declarative or native evidence;
 - do not describe `Internal` naming or same-runspace module privacy as access control;
 - when consuming any persisted result, require the structural consumer rule of exactly one final terminal marker;
 - keep the legacy path only where its lower-assurance compatibility contract is explicitly acceptable.
 
-Issue #42 defines the legacy API lifecycle. Its current state is `compatibility-only`: existing Issue #29 compatibility behavior remains supported, while the arbitrary-body API remains outside the sole terminal-authority contract for new `HIGH_IMPACT` gates. Renaming, runtime deprecation warnings, migration-complete status, and removal require later explicit lifecycle transitions backed by evidence. See `docs/history/issue-42-legacy-verification-api-migration.md`.
+Issue #42 defines the legacy API lifecycle. Its current state is `compatibility-only`: existing Issue #29 compatibility behavior remains supported, while the arbitrary-body API remains outside every required-assertion and terminal-authority role for new `HIGH_IMPACT` gates, including composite use with declarative or native evidence. Renaming, runtime deprecation warnings, migration-complete status, and removal require later explicit lifecycle transitions backed by evidence. See `docs/history/issue-42-legacy-verification-api-migration.md`.
 
 ## Validation requirements
 

@@ -34,8 +34,10 @@ on those legacy helper functions for its terminal-result authority.
 `docs/INTERACTIVE_POWERSHELL_VERIFICATION.md` documents the legacy API as a
 lower-assurance compatibility mechanism.
 
-This documentation does not make the legacy arbitrary-body API valid as the
-sole terminal authority for a new HIGH_IMPACT gate.
+This documentation does not make the legacy arbitrary-body API valid for any
+required assertion, terminal-authority evidence, or terminal outcome in a new
+HIGH_IMPACT gate, whether used alone or combined with declarative or native
+evidence.
 
 ### Test-only compatibility coverage
 
@@ -103,8 +105,9 @@ The legacy API lifecycle is defined as:
 1. `compatibility-only`
    - current state;
    - existing Issue #29 compatibility behavior remains supported;
-   - new HIGH_IMPACT verification must not use the arbitrary `-Body` API as
-     sole terminal authority.
+   - in new HIGH_IMPACT verification, the arbitrary `-Body` API must not
+     supply a required assertion, terminal-authority evidence, or a terminal
+     outcome, whether alone or combined with declarative or native evidence.
 
 2. `deprecated-for-new-use`
    - no new callers should be introduced, including lower-assurance callers;
@@ -135,8 +138,9 @@ At this stage:
 - do not rename it;
 - do not add runtime warning behavior;
 - do not weaken the declarative authority policy;
-- do not silently fall back to arbitrary `-Body` for an unsupported
-  HIGH_IMPACT assertion;
+- do not use arbitrary `-Body` for an unsupported HIGH_IMPACT assertion, even
+  as secondary or composite authority alongside declarative or native
+  evidence;
 - preserve the Issue #29 bounded fail-stop/logging behavior.
 
 Runtime deprecation warnings are deferred until a deliberate transition to
