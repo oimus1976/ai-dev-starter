@@ -14,9 +14,11 @@ For a new `HIGH_IMPACT` gate, prefer the declarative controller documented in `d
 
 The declarative path does not accept an arbitrary authoritative PowerShell callback. It validates the entire data-only plan before native execution, executes only supported primitives, frames caller/native evidence, owns the terminal result, and structurally validates that result.
 
-`Invoke-VerificationAttempt -Body { ... }` remains a compatibility surface for the Issue #29 fail-stop/logging behavior. It is **not** the sole terminal-authority surface for a new `HIGH_IMPACT` gate. Issue #39 adversarial review proved that arbitrary body code in the same dot-sourced runspace can reach the legacy raw writer. Same-runspace naming, module privacy, file locking, and manually assigned `ConstrainedLanguage` were not accepted as a security boundary.
+`Invoke-VerificationAttempt -Body { ... }` remains a compatibility surface for the Issue #29 fail-stop/logging behavior. For a new `HIGH_IMPACT` gate, it must not supply a required assertion, terminal-authority evidence, or a PASS / FAIL / BLOCKED determination, whether used alone or combined with declarative or native evidence. Issue #39 adversarial review proved that arbitrary body code in the same dot-sourced runspace can reach the legacy raw writer. Same-runspace naming, module privacy, file locking, and manually assigned `ConstrainedLanguage` were not accepted as a security boundary.
 
 Do not silently substitute the legacy body API when a declarative plan cannot express a required HIGH_IMPACT assertion. Either add a reviewed declarative primitive or report that the higher-assurance path does not yet express the gate.
+
+Issue #42 records the legacy API's current lifecycle state as `compatibility-only`. Runtime deprecation warnings, renaming, and removal are deferred; later lifecycle transitions require explicit migration evidence and review. See `docs/history/issue-42-legacy-verification-api-migration.md`.
 
 ## Declarative verification plan
 
